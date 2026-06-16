@@ -27,6 +27,7 @@
     preserveUploadMeta: true, // keep metadata fields between uploads
     showCreator: true, // show the creator on result cards (#10)
     showType: true, // show the media type on result cards (#10)
+    perPage: 200, // results per page (50/100/200) — default to the largest
     logging: false, // diagnostics/logging OFF by default (#1)
     downloadSubfolders: false, // a folder per downloaded item? off = flat into the download folder (#5)
     downloadDelaySec: 5, // seconds to wait between downloading items, 0..99 (#16)
@@ -50,6 +51,7 @@
   const VIEW_MODES = ['grid', 'compact'];
   const THEMES = ['system', 'light', 'dark'];
   const DENSITIES = ['comfortable', 'cozy', 'compact'];
+  const PER_PAGE_OPTIONS = [50, 100, 200];
 
   /** Merge a partial prefs object onto the defaults, validating values. */
   function normalizePrefs(p = {}) {
@@ -64,6 +66,7 @@
     out.logging = coerceBool(out.logging); // (#1)
     out.downloadSubfolders = coerceBool(out.downloadSubfolders); // (#5)
     out.downloadDelaySec = clampDelay(out.downloadDelaySec); // (#16)
+    out.perPage = PER_PAGE_OPTIONS.includes(Number(out.perPage)) ? Number(out.perPage) : DEFAULT_PREFS.perPage;
     return out;
   }
 
@@ -108,6 +111,7 @@
     VIEW_MODES,
     THEMES,
     DENSITIES,
+    PER_PAGE_OPTIONS,
     normalizePrefs,
     resolveTheme,
     thumbnailUrl,

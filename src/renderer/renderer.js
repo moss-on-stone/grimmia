@@ -156,9 +156,9 @@ document.querySelectorAll('.tab').forEach((tab) => {
 /* ------------------------------- search ---------------------------------- */
 let currentPage = 1;
 let numFound = 0;
-// #8: results per page (50 default; 100/200 selectable). Read at search time.
-let ROWS = 50;
-const PER_PAGE_OPTIONS = [50, 100, 200];
+// #8: results per page (200 default; 50/100 also selectable). Read at search time.
+const PER_PAGE_OPTIONS = viewPrefs.PER_PAGE_OPTIONS;
+let ROWS = viewPrefs.DEFAULT_PREFS.perPage;
 
 // The active search: { type:'basic', q } or { type:'advanced', fields }.
 let activeSearch = null;
@@ -703,7 +703,7 @@ $('#jump-page').addEventListener('keydown', (e) => {
 
 // #8: results per page — re-run the current query from page 1.
 $('#per-page').addEventListener('change', async (e) => {
-  ROWS = Number(e.target.value) || 50;
+  ROWS = Number(e.target.value) || viewPrefs.DEFAULT_PREFS.perPage;
   await window.ia.settings.update({ perPage: ROWS });
   if (activeSearch) runSearch(1);
 });
@@ -1691,8 +1691,8 @@ async function initSettings() {
   $('#pref-subfolders').checked = prefs.downloadSubfolders; // #5
   $('#pref-download-delay').value = String(prefs.downloadDelaySec); // #16
   $('#pref-theme').value = prefs.theme;
-  // #8: results-per-page (50/100/200)
-  ROWS = PER_PAGE_OPTIONS.includes(Number(s.perPage)) ? Number(s.perPage) : 50;
+  // #8: results-per-page (50/100/200) — normalized default is 200.
+  ROWS = prefs.perPage;
   $('#per-page').value = String(ROWS);
   // #4: list density
   applyDensity(prefs.density);

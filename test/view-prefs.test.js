@@ -26,6 +26,28 @@ test('DEFAULT_PREFS keeps logging OFF by default (#1)', () => {
   assert.equal(vp.DEFAULT_PREFS.logging, false);
 });
 
+/* ----------------------- results per page --------------------------------- */
+
+test('DEFAULT_PREFS shows 200 results per page by default', () => {
+  assert.equal(vp.DEFAULT_PREFS.perPage, 200);
+});
+
+test('PER_PAGE_OPTIONS lists the selectable page sizes', () => {
+  assert.deepEqual(vp.PER_PAGE_OPTIONS, [50, 100, 200]);
+});
+
+test('normalizePrefs keeps a valid perPage and coerces strings', () => {
+  assert.equal(vp.normalizePrefs({ perPage: 50 }).perPage, 50);
+  assert.equal(vp.normalizePrefs({ perPage: 100 }).perPage, 100);
+  assert.equal(vp.normalizePrefs({ perPage: '200' }).perPage, 200, 'numeric string coerced');
+});
+
+test('normalizePrefs falls back to 200 for an invalid/absent perPage', () => {
+  assert.equal(vp.normalizePrefs({ perPage: 75 }).perPage, 200, 'off-list value rejected');
+  assert.equal(vp.normalizePrefs({ perPage: 'lots' }).perPage, 200);
+  assert.equal(vp.normalizePrefs({}).perPage, 200);
+});
+
 /* --------------- creator/type card toggles (#10) -------------------------- */
 
 test('DEFAULT_PREFS shows creator and type on cards by default; coerces both (#10)', () => {

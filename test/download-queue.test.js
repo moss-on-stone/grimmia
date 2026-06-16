@@ -14,7 +14,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { backoffDelay, isTransient, runQueue } = require('../src/main/download-queue');
+const { backoffDelay, jitteredBackoff, isTransient, runQueue } = require('../src/main/download-queue');
 
 /* ------------------------------ backoffDelay ------------------------------ */
 
@@ -26,6 +26,31 @@ test('backoffDelay grows exponentially from a base', () => {
 
 test('backoffDelay caps at a maximum', () => {
   assert.ok(backoffDelay(20, 100) <= 30000);
+});
+
+/* ------------------------- jitteredBackoff (M5) --------------------------- */
+// Deterministic exponential backoff causes synchronized retry storms against an
+// already-throttling server. Jitter spreads them. rand is injectable for tests.
+
+test('jitteredBackoff scales the exponential delay by [0.5, 1.0) using rand', () => {
+  // rand=0 → half the base delay; rand→1 → full delay.
+  assert.equal(jitteredBackoff(0, 100, () => 0), 50, 'rand 0 → 50% of 100');
+  assert.equal(jitteredBackoff(0, 100, () => 1), 100, 'rand 1 → 100% of 100');
+  assert.equal(jitteredBackoff(1, 100, () => 0), 100, 'attempt 1 base 200 → 50% = 100');
+});
+
+test('jitteredBackoff never exceeds the cap', () => {
+  assert.ok(jitteredBackoff(20, 100, () => 1) <= 30000);
+});
+
+test('jitteredBackoff stays within [0.5x, 1.0x] of the exponential schedule', () => {
+  for (let a = 0; a < 6; a++) {
+    const base = backoffDelay(a, 500);
+    const lo = jitteredBackoff(a, 500, () => 0);
+    const hi = jitteredBackoff(a, 500, () => 0.999);
+    assert.ok(lo >= base * 0.5 - 1 && lo <= base, `attempt ${a} low bound`);
+    assert.ok(hi <= base && hi >= base * 0.5, `attempt ${a} high bound`);
+  }
 });
 
 /* ------------------------------- isTransient ------------------------------ */

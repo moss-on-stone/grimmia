@@ -29,12 +29,23 @@ const { HOST, S3_HOST, USER_AGENT } = require('../shared/constants');
  * Low-level request helper
  * ------------------------------------------------------------------------ */
 
-async function request(method, url, { headers = {}, body, signal } = {}) {
+// Deadline for the small JSON endpoints (login/search/metadata/tasks/scrape).
+// These return quickly in practice; a stalled one must not hang forever (C1).
+const DEFAULT_REQUEST_TIMEOUT_MS = 45000;
+
+async function request(method, url, { headers = {}, body, signal, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
+  // C1: bound every request with a timeout, combined with the caller's signal
+  // (so a cancel still aborts) when AbortSignal.any is available.
+  let effectiveSignal = signal;
+  if (timeoutMs > 0 && typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    effectiveSignal = signal && AbortSignal.any ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+  }
   const res = await fetch(url, {
     method,
     headers: { 'User-Agent': USER_AGENT, ...headers },
     body,
-    signal,
+    signal: effectiveSignal,
     redirect: 'follow',
   });
   const text = await res.text();
@@ -177,7 +188,12 @@ function parseContentRange(value) {
   };
 }
 
-function downloadFile({ url, destPath, expectedSize, onProgress, signal }) {
+// Default idle timeout for a download/upload: abort if the connection goes
+// silent (no headers, or a stalled body) for this long. Resets on each chunk so
+// a slow-but-steady transfer is never killed.
+const DEFAULT_IDLE_TIMEOUT_MS = 60000;
+
+function downloadFile({ url, destPath, expectedSize, onProgress, signal, force, timeoutMs = DEFAULT_IDLE_TIMEOUT_MS }) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
 
@@ -187,7 +203,9 @@ function downloadFile({ url, destPath, expectedSize, onProgress, signal }) {
     // Only consider resume/skip when we actually know the expected size. Files
     // with no recorded size are downloaded fresh — never appended (H1.1): an
     // already-complete no-size file used to be re-Range'd and grown forever.
-    if (knownSize != null && fs.existsSync(destPath)) {
+    // `force` (H4) bypasses the size-based skip — used to re-download a file
+    // that matched on size but FAILED its checksum.
+    if (!force && knownSize != null && fs.existsSync(destPath)) {
       const stat = fs.statSync(destPath);
       if (stat.size === knownSize) {
         resolve({ path: destPath, bytes: stat.size, skipped: true });
@@ -207,7 +225,9 @@ function downloadFile({ url, destPath, expectedSize, onProgress, signal }) {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
         res.resume();
         const next = new URL(res.headers.location, u).toString();
-        downloadFile({ url: next, destPath, expectedSize, onProgress, signal }).then(resolve, reject);
+        // Carry the signal AND timeout through the redirect so a cancel/stall on
+        // the redirected request is still honored (H3).
+        downloadFile({ url: next, destPath, expectedSize, onProgress, signal, force, timeoutMs }).then(resolve, reject);
         return;
       }
 
@@ -240,11 +260,23 @@ function downloadFile({ url, destPath, expectedSize, onProgress, signal }) {
       const out = fs.createWriteStream(destPath, { flags: resuming ? 'a' : 'w' });
       let received = startByte;
       let settled = false;
-      const fail = (err) => {
+      let pendingError = null;
+
+      // H3: never settle the promise until the write fd is actually CLOSED.
+      // On Windows an open handle locks the file, so resolving/rejecting before
+      // close lets a retry re-open a still-locked path. We destroy the stream,
+      // then settle in its 'close' handler.
+      const finish = () => {
         if (settled) return;
         settled = true;
-        out.destroy();
-        reject(err);
+        if (signal) signal.removeEventListener('abort', onAbort);
+        if (pendingError) reject(pendingError);
+        else resolve({ path: destPath, bytes: received, skipped: false });
+      };
+      const fail = (err) => {
+        if (settled || pendingError) return;
+        pendingError = err;
+        out.destroy(); // 'close' → finish() rejects with pendingError
       };
 
       const onAbort = () => {
@@ -268,33 +300,35 @@ function downloadFile({ url, destPath, expectedSize, onProgress, signal }) {
         fail(new IAError(`Connection dropped during download of ${path.basename(destPath)}.`))
       );
       res.on('close', () => {
-        if (!settled && !res.complete) {
+        if (!settled && !pendingError && !res.complete) {
           fail(new IAError(`Connection closed before download of ${path.basename(destPath)} finished.`));
         }
       });
       out.on('error', (err) => fail(err));
-      out.on('finish', () => {
-        if (signal) signal.removeEventListener('abort', onAbort);
-        if (settled) return;
-        // H1.3: when the total size is known, a finished stream that delivered
-        // fewer bytes (dropped connection) must be treated as a failure, not a
-        // silent success with a truncated file.
+      out.on('close', () => {
+        // The fd is now released — safe to settle (resolve or the pending error).
+        if (pendingError) return finish();
+        // H1.3: a finished stream short of the known size is a truncation.
         if (knownSize != null && received !== knownSize) {
-          settled = true;
-          reject(
-            new IAError(
-              `Incomplete download for ${path.basename(destPath)}: got ${received} of ${knownSize} bytes.`,
-              { status: res.statusCode }
-            )
+          pendingError = new IAError(
+            `Incomplete download for ${path.basename(destPath)}: got ${received} of ${knownSize} bytes.`,
+            { status: res.statusCode }
           );
-          return;
+          return finish();
         }
-        settled = true;
-        resolve({ path: destPath, bytes: received, skipped: false });
+        finish();
       });
       res.pipe(out);
     });
 
+    // C1: idle timeout. Fires if no socket activity for `timeoutMs`; resets on
+    // every byte received (the http req emits 'timeout' on socket idle). Without
+    // this a server that accepts the socket then stalls hangs forever.
+    if (timeoutMs > 0) {
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new IAError(`Download timed out for ${path.basename(destPath)}.`, { code: 'ETIMEDOUT' }));
+      });
+    }
     req.on('error', (err) => reject(err));
   });
 }
@@ -344,6 +378,7 @@ function uploadFile({
   derive = true,
   onProgress,
   signal,
+  timeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
 }) {
   return new Promise((resolve, reject) => {
     const auth = core.authHeader(creds);
@@ -378,6 +413,13 @@ function uploadFile({
       });
     });
     req.on('error', (err) => reject(err));
+    // C1: idle timeout so a stalled upload (server stops reading) fails instead
+    // of hanging the transfer queue forever. Resets on socket activity.
+    if (timeoutMs > 0) {
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new IAError(`Upload timed out for ${remote}.`, { code: 'ETIMEDOUT' }));
+      });
+    }
 
     const stream = fs.createReadStream(filePath);
     let sent = 0;

@@ -135,6 +135,91 @@ test('rejects when the connection drops mid-stream (short of the known size)', a
   }
 });
 
+/* --------------------------- C1: idle timeout ----------------------------- */
+
+test('rejects with a timeout when the server stalls before sending headers (C1)', async () => {
+  const dest = tmpFile();
+  // Server accepts the socket and never responds → without a timeout this hangs
+  // forever (and would freeze the whole transfer queue).
+  const srv = await startServer((_req, _res) => {
+    /* never write, never end */
+  });
+  try {
+    await assert.rejects(
+      ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: 10, timeoutMs: 150 }),
+      /timed out|timeout/i
+    );
+  } finally {
+    await srv.close();
+  }
+});
+
+test('rejects with a timeout when the body STALLS mid-stream (idle timeout) (C1)', async () => {
+  const dest = tmpFile();
+  // Sends headers + a few bytes, then goes silent (socket stays open). Only an
+  // idle timeout — not on('close')/on('aborted') — can catch this.
+  const srv = await startServer((_req, res) => {
+    res.writeHead(200, { 'Content-Length': '10' });
+    res.write('AB');
+    // never write the rest, never end, keep the socket open
+  });
+  try {
+    await assert.rejects(
+      ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: 10, timeoutMs: 150 }),
+      /timed out|timeout/i
+    );
+  } finally {
+    await srv.close();
+  }
+});
+
+test('a steady stream does NOT trip the idle timeout (timer resets per chunk) (C1)', async () => {
+  const dest = tmpFile();
+  const full = 'ABCDEFGHIJ';
+  // Drip a byte every 40ms; total ~400ms > the 150ms idle timeout, but each
+  // chunk resets the idle timer, so it should complete, not time out.
+  const srv = await startServer((_req, res) => {
+    res.writeHead(200, { 'Content-Length': String(full.length) });
+    let i = 0;
+    const t = setInterval(() => {
+      if (i < full.length) {
+        res.write(full[i++]);
+      } else {
+        clearInterval(t);
+        res.end();
+      }
+    }, 40);
+  });
+  try {
+    const r = await ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: 10, timeoutMs: 150 });
+    assert.equal(r.bytes, full.length);
+    assert.equal(fs.readFileSync(dest, 'utf8'), full);
+  } finally {
+    await srv.close();
+  }
+});
+
+/* ------------------ H3: force re-download bypasses skip -------------------- */
+
+test('force:true re-downloads even when a same-size file already exists (H4/H3)', async () => {
+  const dest = tmpFile();
+  fs.writeFileSync(dest, 'WRONG'); // 5 bytes, same size, wrong content
+  let served = false;
+  const srv = await startServer((_req, res) => {
+    served = true;
+    res.writeHead(200, { 'Content-Length': '5' });
+    res.end('RIGHT');
+  });
+  try {
+    const r = await ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: 5, force: true });
+    assert.equal(served, true, 'force must hit the server despite the size match');
+    assert.equal(r.skipped, false);
+    assert.equal(fs.readFileSync(dest, 'utf8'), 'RIGHT', 'force overwrites the wrong file');
+  } finally {
+    await srv.close();
+  }
+});
+
 test('rejects a cleanly-ended body that is shorter than the known size (finish check)', async () => {
   const dest = tmpFile();
   // Chunked (no Content-Length): the stream ends cleanly after 4 bytes, so no

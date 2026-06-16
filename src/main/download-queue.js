@@ -16,6 +16,17 @@ function backoffDelay(attempt, base = 500) {
   return Math.min(MAX_BACKOFF_MS, base * 2 ** attempt);
 }
 
+/**
+ * Exponential backoff WITH jitter (M5): the capped delay scaled to a random
+ * [0.5, 1.0) of itself, so many files retrying after the same 503 don't re-hit
+ * archive.org in lockstep. `rand` is injectable (defaults to Math.random) so the
+ * jitter is testable. Result is floored to an integer ms.
+ */
+function jitteredBackoff(attempt, base = 500, rand = Math.random) {
+  const capped = backoffDelay(attempt, base);
+  return Math.floor(capped * (0.5 + 0.5 * rand()));
+}
+
 /** Whether an error is a transient failure worth retrying. */
 function isTransient(err) {
   if (!err) return false;
@@ -49,7 +60,7 @@ async function runQueue(items, runner, opts = {}) {
   const {
     concurrency = 3,
     maxRetries = 3,
-    backoffDelay: backoff = backoffDelay,
+    backoffDelay: backoff = jitteredBackoff,
     onEvent = () => {},
     signal,
   } = opts;
@@ -99,4 +110,4 @@ async function runQueue(items, runner, opts = {}) {
   return results;
 }
 
-module.exports = { backoffDelay, isTransient, runQueue, MAX_BACKOFF_MS };
+module.exports = { backoffDelay, jitteredBackoff, isTransient, runQueue, MAX_BACKOFF_MS };

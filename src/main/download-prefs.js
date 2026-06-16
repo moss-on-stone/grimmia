@@ -198,14 +198,38 @@ function matchesFilters(name, { include = [], exclude = [] } = {}) {
   return true;
 }
 
+// Windows reserved DEVICE names — forbidden as a path component even WITH an
+// extension (CON.txt is still reserved). macOS/Linux allow them, so this only
+// matters on Windows; we escape on every platform for portable output.
+const WIN_RESERVED_RE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/** Whether the stem (basename without its final extension) is a reserved device name. */
+function isReservedName(segment) {
+  const stem = String(segment).replace(/\.[^.]*$/, '');
+  return WIN_RESERVED_RE.test(stem);
+}
+
+/**
+ * Make a SINGLE path component safe on Windows AND macOS:
+ *  - replace characters illegal on Windows (\ / : * ? " < > |) and control chars
+ *  - collapse whitespace, trim leading/trailing spaces and dots (Windows strips
+ *    trailing dots/spaces silently, causing name mismatches)
+ *  - escape Windows reserved device names (CON, NUL, COM1-9, LPT1-9, …) by
+ *    prefixing an underscore, preserving any extension
+ * Never returns an empty string.
+ */
+function sanitizeSegment(name, fallback = 'file') {
+  let s = String(name == null ? '' : name);
+  s = s.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_');
+  s = s.replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
+  if (!s) return fallback;
+  if (isReservedName(s)) s = '_' + s;
+  return s;
+}
+
 /** Strip characters illegal in filenames on Windows/macOS and tidy up. */
 function sanitizeFilename(name) {
-  let s = String(name == null ? '' : name);
-  // Illegal on Windows: \ / : * ? " < > |  (plus control chars). Replace each.
-  s = s.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_');
-  // Collapse whitespace, trim trailing/leading spaces and dots.
-  s = s.replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
-  if (!s) s = 'file';
+  let s = sanitizeSegment(name);
   // Truncate to a safe length, preserving the extension.
   const MAX = 200;
   if (s.length > MAX) {
@@ -311,6 +335,8 @@ module.exports = {
   isRealFile,
   filterFilesByFormat,
   formatForItem,
+  sanitizeSegment,
+  isReservedName,
   globToRegExp,
   matchesFilters,
   parsePatterns,

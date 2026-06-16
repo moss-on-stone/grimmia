@@ -13,6 +13,7 @@ const {
   filterFilesByFormat,
   formatForItem,
   sanitizeFilename,
+  sanitizeSegment,
   applyTitleToFilename,
   planDownload,
   resolveDownloadPlan,
@@ -208,6 +209,59 @@ test('sanitizeFilename truncates very long names but keeps the extension', () =>
   const out = sanitizeFilename(long);
   assert.ok(out.length <= 200);
   assert.ok(out.endsWith('.pdf'));
+});
+
+/* ----------- Windows-safety: reserved names + trailing dot/space ---------- */
+// Windows forbids reserved DEVICE basenames (CON, PRN, AUX, NUL, COM1-9,
+// LPT1-9), even with an extension, and silently strips trailing dots/spaces
+// from path components. macOS allows all of these, so this only bites Windows.
+
+test('sanitizeSegment leaves an ordinary segment unchanged', () => {
+  assert.equal(sanitizeSegment('book_text'), 'book_text');
+  assert.equal(sanitizeSegment('My Item 2024'), 'My Item 2024');
+});
+
+test('sanitizeSegment strips illegal chars and control chars', () => {
+  assert.equal(sanitizeSegment('a/b\\c:d*e?f"g<h>i|j'), 'a_b_c_d_e_f_g_h_i_j');
+});
+
+test('sanitizeSegment trims trailing dots and spaces (Windows strips them silently)', () => {
+  assert.equal(sanitizeSegment('folder. '), 'folder');
+  assert.equal(sanitizeSegment('name...'), 'name');
+  assert.equal(sanitizeSegment('  spaced  '), 'spaced');
+});
+
+test('sanitizeSegment escapes Windows reserved device names (with or without extension)', () => {
+  for (const n of ['CON', 'con', 'PRN', 'AUX', 'NUL', 'COM1', 'COM9', 'LPT1', 'LPT9']) {
+    const out = sanitizeSegment(n);
+    assert.notEqual(out.toLowerCase(), n.toLowerCase(), `${n} must be escaped`);
+  }
+  // Reserved + extension is also reserved on Windows.
+  assert.doesNotMatch(sanitizeSegment('CON.pdf').toLowerCase(), /^con\.pdf$/);
+  assert.doesNotMatch(sanitizeSegment('nul.txt').toLowerCase(), /^nul\.txt$/);
+});
+
+test('sanitizeSegment does NOT escape names that merely START with a reserved word', () => {
+  assert.equal(sanitizeSegment('console'), 'console');
+  assert.equal(sanitizeSegment('CONTENT'), 'CONTENT');
+  assert.equal(sanitizeSegment('com10'), 'com10'); // only COM1-9 are reserved
+  assert.equal(sanitizeSegment('lpt0'), 'lpt0');
+});
+
+test('sanitizeSegment never returns an empty string', () => {
+  assert.ok(sanitizeSegment('') .length > 0);
+  assert.ok(sanitizeSegment('...').length > 0);
+  assert.ok(sanitizeSegment('/\\:').length > 0);
+});
+
+test('sanitizeFilename escapes a reserved device basename but keeps the extension', () => {
+  const out = sanitizeFilename('CON.pdf');
+  assert.match(out, /\.pdf$/);
+  assert.doesNotMatch(out.toLowerCase(), /^con\.pdf$/, 'CON.pdf is reserved on Windows');
+});
+
+test('sanitizeFilename escapes a bare reserved name with no extension', () => {
+  assert.notEqual(sanitizeFilename('NUL').toUpperCase(), 'NUL');
 });
 
 /* --------------------------- title -> filename ---------------------------- */

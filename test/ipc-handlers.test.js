@@ -16,7 +16,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { handleDownloadStart } = require('../src/main/ipc-handlers');
+const { handleDownloadStart, sanitizeDir, sanitizeRel, boundedSaveAs } = require('../src/main/ipc-handlers');
 
 // Keep logging out of the real userData during tests: point it at a throwaway
 // dir. (node --test runs each file in its own process, so this is isolated.)
@@ -47,6 +47,82 @@ function makeSendSpy() {
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'ia-dlstart-'));
 }
+
+/* --------- Windows-safe directory / relative-path sanitization ------------ */
+
+test('sanitizeDir escapes a Windows reserved device name used as an identifier', () => {
+  assert.notEqual(sanitizeDir('nul').toLowerCase(), 'nul');
+  assert.notEqual(sanitizeDir('com1').toLowerCase(), 'com1');
+});
+
+test('sanitizeDir trims a trailing dot/space (Windows strips them on disk)', () => {
+  assert.equal(sanitizeDir('my.item.'), 'my.item');
+  assert.equal(sanitizeDir('spaced '), 'spaced');
+});
+
+test('sanitizeDir keeps an ordinary identifier and falls back to "item" for empties', () => {
+  assert.equal(sanitizeDir('north-china-daily-news'), 'north-china-daily-news');
+  assert.equal(sanitizeDir('...'), 'item');
+});
+
+test('sanitizeRel escapes reserved names and trims dots in EVERY interior segment', () => {
+  // IA internal subdirectories: a reserved or trailing-dot interior segment must
+  // be made Windows-safe too, not just the basename.
+  const out = sanitizeRel('CON/sub./file.pdf');
+  const segs = out.split(require('node:path').sep);
+  assert.notEqual(segs[0].toLowerCase(), 'con', 'reserved interior dir escaped');
+  assert.equal(segs[1], 'sub', 'trailing dot trimmed on interior dir');
+  assert.equal(segs[2], 'file.pdf');
+});
+
+test('sanitizeRel drops . and .. traversal segments', () => {
+  const out = sanitizeRel('a/../b/./c.txt');
+  const segs = out.split(require('node:path').sep);
+  assert.deepEqual(segs, ['a', 'b', 'c.txt']);
+});
+
+/* ---------------- Windows MAX_PATH (260) length bounding ------------------- */
+// On Windows (without the long-path opt-in) the FULL path must stay under 260.
+// boundedSaveAs shortens the filename's stem (keeping the extension) so
+// itemDir + sep + saveAs fits. Driven with platform:'win32'.
+
+test('boundedSaveAs leaves a short name unchanged', () => {
+  assert.equal(boundedSaveAs('C:\\Dl\\item', 'book.pdf', 'win32'), 'book.pdf');
+});
+
+test('boundedSaveAs shortens an over-long filename but keeps the extension (win32)', () => {
+  const itemDir = 'C:\\Downloads\\' + 'd'.repeat(150);
+  const longName = 'n'.repeat(200) + '.pdf';
+  const out = boundedSaveAs(itemDir, longName, 'win32');
+  const full = itemDir + '\\' + out;
+  assert.ok(full.length <= 260, `full path must fit 260, got ${full.length}`);
+  assert.ok(out.endsWith('.pdf'), 'extension preserved');
+  assert.ok(out.length > 4, 'still has a stem');
+});
+
+test('boundedSaveAs preserves the extension even when the dir is nearly 260 already (win32)', () => {
+  const itemDir = 'C:\\' + 'x'.repeat(245);
+  const out = boundedSaveAs(itemDir, 'report.pdf', 'win32');
+  assert.ok(out.endsWith('.pdf'));
+  const full = itemDir + '\\' + out;
+  // Can't always fit (dir alone may already be huge), but the stem is minimized.
+  assert.ok(out.length <= 'report.pdf'.length);
+});
+
+test('boundedSaveAs does NOT shorten on posix (long paths allowed)', () => {
+  const itemDir = '/data/' + 'd'.repeat(300);
+  const longName = 'n'.repeat(200) + '.pdf';
+  assert.equal(boundedSaveAs(itemDir, longName, 'posix'), longName);
+});
+
+test('boundedSaveAs keeps interior IA subdirs intact, shortening only the basename (win32)', () => {
+  const itemDir = 'C:\\Downloads\\' + 'd'.repeat(140);
+  const rel = 'sub\\' + 'n'.repeat(200) + '.pdf';
+  const out = boundedSaveAs(itemDir, rel, 'win32');
+  assert.ok(out.startsWith('sub\\'), 'interior subdir preserved');
+  assert.ok(out.endsWith('.pdf'));
+  assert.ok((itemDir + '\\' + out).length <= 260);
+});
 
 test('rejects a non-array items payload with an error phase (C1)', async () => {
   const ia = makeStubIa();
@@ -242,6 +318,59 @@ test('#16 waits the configured delay BETWEEN items (not before the first, not wi
     assert.equal(res.ok, true);
     // Exactly one inter-item pause (between item-a and item-b), of 5000ms.
     assert.deepEqual(sleeps, [5000], 'one 5s pause between the two items');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('#16 the inter-item sleep RECEIVES the abort signal so it can wake early (H6)', async () => {
+  const ia = makeStubIa();
+  const { send } = makeSendSpy();
+  const dir = tmpDir();
+  const controller = new AbortController();
+  let sawSignal = false;
+  const sleep = async (_ms, signal) => { sawSignal = !!(signal && typeof signal.aborted === 'boolean'); };
+  try {
+    await handleDownloadStart(
+      {
+        items: [
+          { identifier: 'item-a', mediatype: 'texts', files: [{ name: 'a.pdf', format: 'Image Container PDF', size: 1 }] },
+          { identifier: 'item-b', mediatype: 'texts', files: [{ name: 'b.pdf', format: 'Image Container PDF', size: 1 }] },
+        ],
+        prefs: { formatText: 'pdf', formatOther: 'largest', rename: 'off', downloadDelaySec: 5 },
+        destRoot: dir,
+        signal: controller.signal,
+      },
+      { ia, send, sleep }
+    );
+    assert.equal(sawSignal, true, 'the runner must pass the abort signal into sleep (H6)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('#16 a cancel DURING the inter-item delay stops the queue before the next item (H6)', async () => {
+  const ia = makeStubIa();
+  const { send } = makeSendSpy();
+  const dir = tmpDir();
+  const controller = new AbortController();
+  // Simulate the user cancelling while the pause is in progress: the sleep
+  // aborts the controller and resolves. The runner must then NOT start item-b.
+  const sleep = async (_ms) => { controller.abort(); };
+  try {
+    await handleDownloadStart(
+      {
+        items: [
+          { identifier: 'item-a', mediatype: 'texts', files: [{ name: 'a.pdf', format: 'Image Container PDF', size: 1 }] },
+          { identifier: 'item-b', mediatype: 'texts', files: [{ name: 'b.pdf', format: 'Image Container PDF', size: 1 }] },
+        ],
+        prefs: { formatText: 'pdf', formatOther: 'largest', rename: 'off', downloadDelaySec: 5 },
+        destRoot: dir,
+        signal: controller.signal,
+      },
+      { ia, send, sleep }
+    );
+    assert.equal(ia.calls.length, 1, 'cancel during the pause must stop item-b from downloading');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -526,23 +655,91 @@ test('applies per-download glob exclude filters (#3)', async () => {
   }
 });
 
-test('skips verification for an already-complete (skipped) file', async () => {
+/* ---------- H4: verify checksum even on a size-based skip ------------------ */
+
+test('a size-matched but checksum-MISMATCHED existing file is re-downloaded (H4)', async () => {
+  // First call reports skipped (size matched on disk); verify says mismatch →
+  // the runner must force a real re-download, then verify ok.
+  let call = 0;
+  const ia = {
+    IAError: class IAError extends Error {},
+    downloadUrl: (id, name) => `https://archive.org/download/${id}/${name}`,
+    getMetadata: async () => ({ metadata: {}, files: [] }),
+    downloadFile: async (args) => {
+      call++;
+      // 1st call: pretend the file already exists at the right size → skipped.
+      if (call === 1 && !args.force) return { path: args.destPath, bytes: 5, skipped: true };
+      // forced re-download writes fresh bytes.
+      return { path: args.destPath, bytes: 5, skipped: false };
+    },
+  };
+  const verifyCalls = [];
+  const verify = async (_p, sums) => {
+    verifyCalls.push(sums.md5);
+    // mismatch on the first (skipped) check, ok after the forced re-download.
+    return verifyCalls.length === 1 ? 'mismatch' : 'ok';
+  };
+  const { send, phases } = makeSendSpy();
+  const dir = tmpDir();
+  try {
+    const res = await handleDownloadStart(
+      { items: [{ identifier: 'good-id', mediatype: 'texts', files: [{ name: 'a.pdf', format: 'Image Container PDF', size: 5, md5: 'abc' }] }], prefs: { formatText: 'pdf', formatOther: 'largest' }, destRoot: dir },
+      { ia, send, verify }
+    );
+    assert.equal(res.ok, true);
+    assert.equal(call, 2, 'a checksum mismatch on the skipped file forces a re-download');
+    const done = phases.find((p) => p.phase === 'file-done');
+    assert.equal(done.verified, 'ok', 'the re-downloaded file verifies ok');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a size-matched checksum-OK existing file is NOT re-downloaded (H4 happy path)', async () => {
+  let call = 0;
+  const ia = {
+    IAError: class IAError extends Error {},
+    downloadUrl: (id, name) => `https://archive.org/download/${id}/${name}`,
+    getMetadata: async () => ({ metadata: {}, files: [] }),
+    downloadFile: async (args) => { call++; return { path: args.destPath, bytes: 5, skipped: true }; },
+  };
+  const verify = async () => 'ok';
+  const { send, phases } = makeSendSpy();
+  const dir = tmpDir();
+  try {
+    await handleDownloadStart(
+      { items: [{ identifier: 'good-id', mediatype: 'texts', files: [{ name: 'a.pdf', format: 'Image Container PDF', size: 5, md5: 'abc' }] }], prefs: { formatText: 'pdf', formatOther: 'largest' }, destRoot: dir },
+      { ia, send, verify }
+    );
+    assert.equal(call, 1, 'a verified-ok skipped file is not re-downloaded');
+    const done = phases.find((p) => p.phase === 'file-done');
+    assert.equal(done.verified, 'ok');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a skipped file with NO published checksum is not verified (nothing to check against)', async () => {
   const ia = {
     IAError: class IAError extends Error {},
     downloadUrl: (id, name) => `https://archive.org/download/${id}/${name}`,
     getMetadata: async () => ({ metadata: {}, files: [] }),
     downloadFile: async (args) => ({ path: args.destPath, bytes: 0, skipped: true }),
   };
+  let verifyCalled = false;
+  const verify = async () => { verifyCalled = true; return 'ok'; };
   const { send, phases } = makeSendSpy();
   const dir = tmpDir();
   try {
+    // No md5/sha1/crc32 on the file → no checksum to verify against (H4).
     await handleDownloadStart(
-      { items: [{ identifier: 'good-id', files: [{ name: 'a.pdf', format: 'PDF', size: 5, md5: 'x' }] }], prefs: { format: 'pdf' }, destRoot: dir },
-      { ia, send }
+      { items: [{ identifier: 'good-id', mediatype: 'texts', files: [{ name: 'a.pdf', format: 'Image Container PDF', size: 5 }] }], prefs: { formatText: 'pdf', formatOther: 'largest' }, destRoot: dir },
+      { ia, send, verify }
     );
     const doneEvt = phases.find((p) => p.phase === 'file-done');
     assert.equal(doneEvt.skipped, true);
-    assert.ok(doneEvt.verified == null, 'skipped files are not re-verified');
+    assert.equal(verifyCalled, false, 'no checksum → skip verification');
+    assert.ok(doneEvt.verified == null, 'no verification result when there is no checksum');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

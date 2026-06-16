@@ -90,10 +90,18 @@ function saveCredentials(creds) {
     } catch {
       /* best effort */
     }
+    // M3: be platform-honest about the protection. POSIX 0600 bits are ignored
+    // on Windows (NTFS uses ACLs), so we can't promise "owner-only" there.
+    const protection =
+      process.platform === 'win32'
+        ? 'protected only by the Windows user-profile permissions (POSIX 0600 has no effect on NTFS)'
+        : 'with owner-only (0600) permissions';
     // eslint-disable-next-line no-console
     console.warn(
       'WARNING: OS encryption (safeStorage) is unavailable; archive.org credentials ' +
-        'are being stored UNENCRYPTED (owner-readable only) at ' +
+        'are being stored UNENCRYPTED ' +
+        protection +
+        ' at ' +
         CREDS_PLAINTEXT_FILE() +
         '. Consider enabling a system keychain.'
     );

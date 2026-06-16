@@ -113,3 +113,33 @@ test('containWithin treats the root itself as not "within" (must be a child)', (
   const root = path.join(os.tmpdir(), 'root');
   assert.equal(v.containWithin(root, root), false);
 });
+
+/* ------------- Windows path semantics (case-insensitive + drive roots) ----- */
+// Driven with platform:'win32' so the win32 path rules are exercised on macOS.
+
+test('containWithin is case-INSENSITIVE on Windows (drive-letter / dir case differs)', () => {
+  // Same folder, different case → must still be "within".
+  assert.equal(v.containWithin('C:\\Users\\Foo\\Downloads', 'c:\\users\\foo\\downloads\\a.pdf', 'win32'), true);
+  assert.equal(v.containWithin('C:\\Dl', 'C:\\DL\\sub\\b.pdf', 'win32'), true);
+});
+
+test('containWithin still blocks real traversal on Windows', () => {
+  assert.equal(v.containWithin('C:\\Dl', 'C:\\Dl\\..\\evil.pdf', 'win32'), false);
+  assert.equal(v.containWithin('C:\\Dl', 'D:\\other\\x.pdf', 'win32'), false, 'different drive is outside');
+});
+
+test('containWithin works when the root is a DRIVE ROOT on Windows (C:\\)', () => {
+  // r + sep used to become "C:\\\\" and reject everything under a drive root.
+  assert.equal(v.containWithin('C:\\', 'C:\\Downloads\\a.pdf', 'win32'), true);
+  assert.equal(v.containWithin('D:\\', 'D:\\file.pdf', 'win32'), true);
+});
+
+test('containWithin remains case-SENSITIVE on posix', () => {
+  assert.equal(v.containWithin('/data/Root', '/data/root/a.pdf', 'posix'), false, 'posix is case-sensitive');
+  assert.equal(v.containWithin('/data/Root', '/data/Root/a.pdf', 'posix'), true);
+});
+
+test('containWithin handles a posix root that is just "/"', () => {
+  assert.equal(v.containWithin('/', '/etc/x', 'posix'), true);
+  assert.equal(v.containWithin('/', '/', 'posix'), false, 'root itself not within');
+});

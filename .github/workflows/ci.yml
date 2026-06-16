@@ -8,10 +8,14 @@ on:
 
 jobs:
   test:
-    name: Test (Node ${{ matrix.node }})
-    runs-on: macos-latest
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        # Run the suite on every shipping platform — Windows path/filename and
+        # permission behavior differs from macOS and must be exercised here.
+        os: [macos-latest, windows-latest, ubuntu-latest]
         node: [18, 20]
     steps:
       - uses: actions/checkout@v4

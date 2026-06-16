@@ -56,6 +56,17 @@ test('#6 the renderer puts the star inside the .actions row (before Details/Down
   );
 });
 
+test('el() has NO innerHTML sink — the dead {html:...} branch is removed (XSS hardening)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'renderer.js'), 'utf8');
+  // The el() helper must not route any attribute value into innerHTML; a
+  // {html: md.title} call would be a latent XSS path for attacker-controlled
+  // metadata. Untrusted data is rendered via textContent only.
+  assert.ok(
+    !/k === 'html'\)\s*node\.innerHTML = v/.test(src),
+    "el() must not have an {html:...} → innerHTML branch"
+  );
+});
+
 test('el() sets boolean attrs (checked/hidden/disabled) as PROPERTIES, not attributes', () => {
   // Guards the bug where checked:false still checked the box because
   // setAttribute("checked", false) makes the attribute present.
@@ -263,4 +274,16 @@ test('#11/#3 Help documents the month-precision year search', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
   const help = (html.match(/id="tab-help"[\s\S]*?<\/section>/) || [''])[0];
   assert.match(help, /1940-09|YYYY-MM/, 'Help should document YYYY-MM month search (#11)');
+});
+
+test('L2: inline <code> uses a monospace font with a Windows fallback (Consolas)', () => {
+  const m = css.match(/(?:^|\n|})\s*code[^{]*\{([^}]*)\}/);
+  assert.ok(m, 'expected a code { } rule');
+  assert.match(m[1], /font-family/, 'code should set a font-family');
+  assert.match(m[1], /monospace/, 'code font should include the monospace keyword');
+  assert.match(m[1], /Consolas/i, 'code font should include Consolas (Windows monospace)');
+});
+
+test('L3: the transfer drag handle does not use the Braille tofu glyph ⠿ on Windows', () => {
+  assert.ok(!css.includes('⠿'), 'the Braille drag-handle glyph ⠿ risks tofu on Windows — use a safer glyph');
 });

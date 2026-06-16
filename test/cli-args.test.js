@@ -12,6 +12,27 @@ const assert = require('node:assert/strict');
 
 const { isDevFromArgv, resolveScreenshotPath, isSelfTest, resolveDemo } = require('../src/main/cli-args');
 
+/* ------------- L6: packaged build ignores ALL dev flags ------------------- */
+
+test('isDevFromArgv is false in a PACKAGED build even with --dev (L6)', () => {
+  // A packaged .app can be relaunched with arbitrary argv; dev primitives
+  // (relaxed selftest window, screenshot file-write) must be unreachable there.
+  assert.equal(isDevFromArgv(['node', 'app', '--dev'], true), false, 'packaged → never dev');
+  assert.equal(isDevFromArgv(['node', 'app', '--dev'], false), true, 'unpackaged → honors --dev');
+  assert.equal(isDevFromArgv(['node', 'app', '--dev']), true, 'default (unpackaged) honors --dev');
+});
+
+test('all dev-gated flags are inert when packaged (L6)', () => {
+  const argv = ['node', 'app', '--dev', '--selftest', '--screenshot=/tmp/x.png', '--demo=cats'];
+  assert.equal(resolveScreenshotPath(argv, true), null, 'no screenshot write when packaged');
+  assert.equal(isSelfTest(argv, true), false, 'no selftest window when packaged');
+  assert.equal(resolveDemo(argv, true), null, 'no demo when packaged');
+  // …but all work in an unpackaged dev run:
+  assert.equal(resolveScreenshotPath(argv, false), '/tmp/x.png');
+  assert.equal(isSelfTest(argv, false), true);
+  assert.equal(resolveDemo(argv, false), 'cats');
+});
+
 /* --------------------------------- demo ----------------------------------- */
 
 test('resolveDemo returns the query in dev, null otherwise', () => {

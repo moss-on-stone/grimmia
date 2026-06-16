@@ -9,17 +9,24 @@
  * where arbitrary argv could otherwise drive an arbitrary-path file write.
  */
 
-/** Whether the app was started in development mode (`--dev`). */
-function isDevFromArgv(argv = []) {
+/**
+ * Whether the app was started in development mode (`--dev`). A PACKAGED build
+ * NEVER counts as dev (L6): a shipped .app/.exe can be relaunched with arbitrary
+ * argv by any local process, so every dev-only primitive (relaxed selftest
+ * window, the --screenshot file-write) must be unreachable regardless of argv.
+ * `isPackaged` is injected (main.js passes app.isPackaged) to keep this pure.
+ */
+function isDevFromArgv(argv = [], isPackaged = false) {
+  if (isPackaged) return false;
   return argv.includes('--dev');
 }
 
 /**
  * Resolve the screenshot output path, or null. Returns a non-null path ONLY in
- * dev mode — in production the `--screenshot=` flag is ignored entirely.
+ * dev mode — in production / packaged the `--screenshot=` flag is ignored.
  */
-function resolveScreenshotPath(argv = []) {
-  if (!isDevFromArgv(argv)) return null;
+function resolveScreenshotPath(argv = [], isPackaged = false) {
+  if (!isDevFromArgv(argv, isPackaged)) return null;
   const arg = argv.find((a) => a.startsWith('--screenshot='));
   if (!arg) return null;
   const path = arg.split('=').slice(1).join('='); // tolerate '=' inside the path
@@ -28,19 +35,19 @@ function resolveScreenshotPath(argv = []) {
 
 /**
  * Whether the app should run its headless self-test (--selftest). Gated behind
- * --dev so it can never be triggered in a packaged production launch.
+ * --dev (and never when packaged) so it can't be triggered in production.
  */
-function isSelfTest(argv = []) {
-  return isDevFromArgv(argv) && argv.includes('--selftest');
+function isSelfTest(argv = [], isPackaged = false) {
+  return isDevFromArgv(argv, isPackaged) && argv.includes('--selftest');
 }
 
 /**
  * Resolve a `--demo=<query>` value (dev-only). When set, the renderer auto-runs
  * that search so a screenshot can capture a populated UI. Returns null outside
- * dev or when absent.
+ * dev / when packaged / when absent.
  */
-function resolveDemo(argv = []) {
-  if (!isDevFromArgv(argv)) return null;
+function resolveDemo(argv = [], isPackaged = false) {
+  if (!isDevFromArgv(argv, isPackaged)) return null;
   const arg = argv.find((a) => a.startsWith('--demo='));
   if (!arg) return null;
   const q = arg.split('=').slice(1).join('=');

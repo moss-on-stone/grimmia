@@ -35,13 +35,17 @@ const csv = require('./csv');
 const { parseTasks, buildMetadataPatch } = require('./json-patch');
 const logger = require('./logger');
 
-const isDev = isDevFromArgv(process.argv);
+// L6: a packaged build NEVER honors dev flags, even if relaunched with --dev,
+// so the relaxed selftest window and the --screenshot file-write are
+// unreachable in production regardless of argv.
+const isPackaged = app.isPackaged;
+const isDev = isDevFromArgv(process.argv, isPackaged);
 // `--screenshot=/abs/path.png` → capture the window to that file and quit.
 // Honored ONLY in dev (H3): in production this arbitrary-file-write primitive
 // is disabled regardless of argv.
-const screenshotPath = resolveScreenshotPath(process.argv);
-const selfTest = isSelfTest(process.argv);
-const demoQuery = resolveDemo(process.argv);
+const screenshotPath = resolveScreenshotPath(process.argv, isPackaged);
+const selfTest = isSelfTest(process.argv, isPackaged);
+const demoQuery = resolveDemo(process.argv, isPackaged);
 const demoSelectFlag = process.argv.includes('--demo-select');
 
 /** In-memory credentials (loaded from encrypted store at startup). */
@@ -288,6 +292,7 @@ ipcMain.handle('search:buildQuery', async (_e, { fields }) => buildAdvancedQuery
 ipcMain.handle('search:parseInput', async (_e, { input }) => parseSearchInput(input || ''));
 
 ipcMain.handle('item:metadata', async (_e, { identifier }) => {
+  validateIdentifier(identifier); // M6: re-validate at the boundary like every other handler
   return ia.getMetadata(identifier);
 });
 

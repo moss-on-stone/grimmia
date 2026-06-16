@@ -86,10 +86,24 @@ function validateDestRoot(destRoot) {
  * with path.resolve and requires the candidate to be a proper descendant (the
  * root itself does not count).
  */
-function containWithin(root, candidate) {
-  const r = path.resolve(root);
-  const c = path.resolve(candidate);
-  return c.startsWith(r + path.sep);
+function containWithin(root, candidate, platform = process.platform) {
+  // Use the matching path semantics (Windows is case-insensitive and uses '\';
+  // posix is case-sensitive and uses '/'). The `platform` arg lets tests drive
+  // win32 rules deterministically on any host.
+  const isWin = platform === 'win32';
+  const p = isWin ? path.win32 : path.posix;
+  let r = p.resolve(root);
+  let c = p.resolve(candidate);
+  if (isWin) {
+    // Windows filesystems are case-insensitive — compare case-folded.
+    r = r.toLowerCase();
+    c = c.toLowerCase();
+  }
+  if (c === r) return false; // the root itself is not "within"
+  // Append exactly one separator (a drive/posix root already ends in one, e.g.
+  // 'C:\\' or '/'), so a child is detected without a double separator.
+  const prefix = r.endsWith(p.sep) ? r : r + p.sep;
+  return c.startsWith(prefix);
 }
 
 module.exports = {

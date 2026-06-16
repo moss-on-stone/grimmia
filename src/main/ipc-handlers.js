@@ -11,7 +11,7 @@
 
 const path = require('node:path');
 
-const { resolveDownloadPlan, isRealFile, parsePatterns, formatForItem, FORMAT_PRESETS } = require('./download-prefs');
+const { resolveDownloadPlan, isRealFile, parsePatterns, formatForItem, sanitizeSegment, FORMAT_PRESETS } = require('./download-prefs');
 const { normalizePrefs } = require('../shared/view-prefs');
 const { validateDownloadItems, validateDestRoot, containWithin } = require('./ipc-validate');
 const { verifyFile } = require('./checksum');
@@ -37,24 +37,85 @@ function formatLabel(key) {
   return (p && p.label) || key;
 }
 
-/** Default inter-item pause (#16); injectable as `sleep` for tests. */
-function defaultSleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Default inter-item pause (#16); injectable as `sleep` for tests. Resolves
+ * after `ms`, or EARLY if `signal` aborts (H6) — so a cancel during the pause
+ * takes effect immediately instead of waiting out the full delay.
+ */
+function defaultSleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal && signal.aborted) return resolve();
+    const t = setTimeout(resolve, ms);
+    if (signal) {
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(t);
+          resolve();
+        },
+        { once: true }
+      );
+    }
+  });
 }
 
-/** Sanitize an identifier into a single safe directory segment. */
+/**
+ * Sanitize an identifier into a single safe directory segment — Windows-safe
+ * (reserved names escaped, trailing dots/spaces trimmed, illegal chars replaced)
+ * and length-capped.
+ */
 function sanitizeDir(name) {
-  // eslint-disable-next-line no-control-regex
-  return String(name).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 200) || 'item';
+  return sanitizeSegment(name, 'item').slice(0, 200);
 }
 
-/** Keep IA's internal subdirectories but strip traversal and unsafe chars. */
+// Classic Windows path limit (without the long-path opt-in). Leave a small
+// margin under 260 for safety.
+const WIN_MAX_PATH = 250;
+
+/**
+ * Bound the assembled write path to Windows' MAX_PATH (260) by shortening the
+ * filename's STEM (never the extension, never the interior IA subdirs) so that
+ * `itemDir + sep + saveAs` fits. No-op on posix (long paths are allowed) and a
+ * no-op when the path already fits. `platform` lets tests drive win32 rules.
+ *
+ * @param {string} itemDir the resolved directory the file lands in
+ * @param {string} saveAs  the relative save-as path (may contain subdirs)
+ */
+function boundedSaveAs(itemDir, saveAs, platform = process.platform) {
+  if (platform !== 'win32') return saveAs;
+  const p = path.win32;
+  const sep = p.sep;
+  const full = itemDir + sep + saveAs;
+  if (full.length <= WIN_MAX_PATH) return saveAs;
+
+  // Split off the directory part of saveAs (interior IA subdirs) from the basename.
+  const lastSep = saveAs.lastIndexOf(sep);
+  const dirPart = lastSep >= 0 ? saveAs.slice(0, lastSep + 1) : ''; // includes trailing sep
+  const base = lastSep >= 0 ? saveAs.slice(lastSep + 1) : saveAs;
+  const ext = p.extname(base);
+  const stem = base.slice(0, base.length - ext.length);
+
+  // Budget left for the stem after the fixed parts.
+  const fixed = itemDir.length + sep.length + dirPart.length + ext.length;
+  const stemBudget = WIN_MAX_PATH - fixed;
+  if (stemBudget <= 0) {
+    // Even the dir+ext alone overflow; keep just the extension (best effort).
+    return dirPart + (ext || '_');
+  }
+  const newStem = stem.slice(0, stemBudget) || '_';
+  return dirPart + newStem + ext;
+}
+
+/**
+ * Keep IA's internal subdirectories but strip traversal and make EVERY segment
+ * Windows-safe (each interior dir, not just the basename). IA names use '/' as
+ * the separator regardless of client OS.
+ */
 function sanitizeRel(name) {
   return String(name)
     .split('/')
-    // eslint-disable-next-line no-control-regex
-    .map((seg) => seg.replace(/[<>:"\\|?*\x00-\x1f]/g, '_'))
     .filter((seg) => seg && seg !== '.' && seg !== '..')
+    .map((seg) => sanitizeSegment(seg))
     .join(path.sep);
 }
 
@@ -166,7 +227,10 @@ async function handleDownloadStart(
     // fast before any network work (M3).
     const total = work.length;
     for (const w of work) {
-      w.destPath = path.join(w.itemDir, sanitizeRel(w.saveAs));
+      // Shorten the basename so the full path fits Windows' MAX_PATH (M1, no-op
+      // on posix and when it already fits).
+      const rel = boundedSaveAs(w.itemDir, sanitizeRel(w.saveAs));
+      w.destPath = path.join(w.itemDir, rel);
       if (!containWithin(w.itemDir, w.destPath) || !containWithin(destRoot, w.destPath)) {
         throw new ia.IAError(`Refusing to write outside the download folder: ${w.saveAs}.`);
       }
@@ -180,26 +244,46 @@ async function handleDownloadStart(
 
     const runner = async (w, i) => {
       if (delayMs > 0 && prevIdentifier != null && w.identifier !== prevIdentifier) {
-        await sleep(delayMs);
+        await sleep(delayMs, signal);
+        // H6: a cancel during the pause must stop here, not start the next item.
+        if (signal && signal.aborted) throw new ia.IAError('Cancelled.');
       }
       prevIdentifier = w.identifier;
+      const checksums = w.checksums || {};
+      const hasChecksum = !!(checksums.md5 || checksums.sha1 || checksums.crc32);
       send({ phase: 'file-start', index: i, total, name: w.saveAs });
-      const r = await ia.downloadFile({
-        url: ia.downloadUrl(w.identifier, w.remote),
-        destPath: w.destPath,
-        expectedSize: w.size,
-        signal,
-        onProgress: ({ received, total: t }) =>
-          send({ phase: 'file-progress', index: i, total, name: w.saveAs, received, totalBytes: t }),
-      });
+      const doDownload = (force) =>
+        ia.downloadFile({
+          url: ia.downloadUrl(w.identifier, w.remote),
+          destPath: w.destPath,
+          expectedSize: w.size,
+          force,
+          signal,
+          onProgress: ({ received, total: t }) =>
+            send({ phase: 'file-progress', index: i, total, name: w.saveAs, received, totalBytes: t }),
+        });
+      let r = await doDownload(false);
 
-      // #4: verify against the published checksum (skip already-complete files).
+      // #4 + H4: verify against the published checksum. A file SKIPPED purely on
+      // a size match is still verified when a checksum exists — a same-size-but-
+      // corrupt file would otherwise be silently accepted. On mismatch, force a
+      // real re-download and verify that.
       let verified;
-      if (!r.skipped) {
+      const runVerify = async () => {
         try {
-          verified = await verify(w.destPath, w.checksums || {});
+          return await verify(w.destPath, checksums);
         } catch {
-          verified = 'unknown';
+          return 'unknown';
+        }
+      };
+      if (!r.skipped) {
+        verified = await runVerify();
+      } else if (hasChecksum) {
+        verified = await runVerify();
+        if (verified === 'mismatch') {
+          log.warn('download: skipped file failed checksum — re-downloading', { name: w.saveAs, identifier: w.identifier });
+          r = await doDownload(true); // bypass the size-based skip
+          verified = await runVerify();
         }
       }
       done++;
@@ -240,4 +324,4 @@ async function handleDownloadStart(
   }
 }
 
-module.exports = { sanitizeDir, sanitizeRel, buildWorkList, handleDownloadStart };
+module.exports = { sanitizeDir, sanitizeRel, boundedSaveAs, buildWorkList, handleDownloadStart };

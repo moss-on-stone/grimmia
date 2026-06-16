@@ -351,6 +351,9 @@ label input, label select, label textarea { margin-top: 5px; color: var(--text);
 .prefs-h { font-size: 14px; margin: 22px 0 10px; color: var(--text); }
 .prefs-h:first-child { margin-top: 0; }
 .small { font-size: 12px; }
+/* L2: render <code> (globs, field keywords, paths) in a real monospace font
+   with a Windows fallback (Consolas) — not the proportional UI font. */
+code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
 .prefs-form code { background: var(--bg-elev2); padding: 2px 6px; border-radius: 5px; }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
@@ -404,7 +407,7 @@ label input, label select, label textarea { margin-top: 5px; color: var(--text);
 .job-waiting { cursor: grab; opacity: 0.92; }
 .job-waiting:active { cursor: grabbing; }
 .job-waiting .job-head::before {
-  content: '⠿'; color: var(--muted); font-size: 14px; line-height: 1;
+  content: '⋮⋮'; color: var(--muted); font-size: 14px; line-height: 1; letter-spacing: -2px;
   margin-right: 2px; flex: 0 0 auto; /* drag handle hint */
 }
 .job.dragging { opacity: 0.5; }

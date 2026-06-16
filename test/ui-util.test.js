@@ -172,6 +172,29 @@ test('itemPageUrl returns empty for a missing identifier', () => {
   assert.equal(u.itemPageUrl(null), '');
 });
 
+/* ----------------------------- userProfileUrl ----------------------------- */
+// Clicking the logged-in username opens that account's archive.org profile,
+// which lives at https://archive.org/details/@<screenname>.
+
+test('userProfileUrl builds the @screenname profile URL', () => {
+  assert.equal(u.userProfileUrl('konrad'), 'https://archive.org/details/@konrad');
+});
+
+test('userProfileUrl tolerates a leading @ and trims whitespace', () => {
+  assert.equal(u.userProfileUrl('@konrad'), 'https://archive.org/details/@konrad');
+  assert.equal(u.userProfileUrl('  konrad  '), 'https://archive.org/details/@konrad');
+});
+
+test('userProfileUrl encodes the screenname', () => {
+  assert.equal(u.userProfileUrl('a b'), 'https://archive.org/details/@a%20b');
+});
+
+test('userProfileUrl returns empty for a missing screenname (e.g. only an email)', () => {
+  assert.equal(u.userProfileUrl(''), '');
+  assert.equal(u.userProfileUrl(null), '');
+  assert.equal(u.userProfileUrl('@'), '');
+});
+
 /* ----------------------------- transferBadge ------------------------------ */
 
 test('transferBadge hides when nothing is transferring', () => {

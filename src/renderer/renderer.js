@@ -109,7 +109,15 @@ async function refreshAuth() {
   if (s.loggedIn) {
     $('#login-view').hidden = true;
     $('#app').hidden = false;
-    $('#who').textContent = s.screenname || s.email || '';
+    // Clicking the username opens the account's archive.org profile page.
+    const who = $('#who');
+    who.textContent = s.screenname || s.email || '';
+    const profileUrl = uiUtil.userProfileUrl(s.screenname);
+    who.classList.toggle('who-link', !!profileUrl);
+    who.title = profileUrl ? 'Open your archive.org profile' : '';
+    who.onclick = profileUrl
+      ? () => window.ia.shell.openExternal(profileUrl).catch((e) => toast(e.message, 'err'))
+      : null;
     await initSettings();
   } else {
     $('#login-view').hidden = false;

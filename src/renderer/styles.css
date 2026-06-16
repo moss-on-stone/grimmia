@@ -150,6 +150,9 @@ label input, label select, label textarea { margin-top: 5px; color: var(--text);
 .tab-badge.badge-upload { background: var(--upload); }
 .topbar-right { display: flex; align-items: center; gap: 12px; }
 .who { color: var(--muted); font-size: 13px; }
+/* Clickable username → opens the user's archive.org profile. */
+.who-link { cursor: pointer; }
+.who-link:hover { color: var(--accent); text-decoration: underline; }
 
 .tab-panel { display: none; flex: 1; overflow: auto; padding: 18px; }
 .tab-panel.active { display: block; }

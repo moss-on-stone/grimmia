@@ -203,6 +203,18 @@
     return `https://archive.org/details/${encodeURIComponent(id)}`;
   }
 
+  /**
+   * The archive.org profile page URL for a logged-in account's screenname.
+   * Profiles live at /details/@<screenname>. Tolerates a leading '@' and
+   * whitespace; returns '' when there's no usable screenname (e.g. only an
+   * email is known).
+   */
+  function userProfileUrl(screenname) {
+    const name = String(screenname == null ? '' : screenname).trim().replace(/^@+/, '');
+    if (!name) return '';
+    return `https://archive.org/details/@${encodeURIComponent(name)}`;
+  }
+
   /** Escape text for safe insertion as HTML text content. */
   function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -228,6 +240,7 @@
     queueBadge,
     transferBadge,
     itemPageUrl,
+    userProfileUrl,
     UPLOAD_LANGUAGES,
   };
 });

@@ -1,7 +1,7 @@
 {
   "name": "ia-desktop",
   "productName": "IA Desktop",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "A friendly desktop app for the Internet Archive — search, browse, download, and upload without the command line.",
   "main": "src/main/main.js",
   "author": "Moss on Stone <moss-on-stone@protonmail.com>",
@@ -38,6 +38,7 @@
       "src/**/*",
       "!**/*.map"
     ],
+    "afterPack": "build/adhoc-sign.js",
     "afterSign": "build/notarize.js",
     "mac": {
       "category": "public.app-category.utilities",
@@ -52,7 +53,8 @@
       ],
       "icon": "build/icon.icns",
       "artifactName": "${productName}-${version}-macOS-${arch}.${ext}",
-      "hardenedRuntime": true,
+      "identity": null,
+      "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"

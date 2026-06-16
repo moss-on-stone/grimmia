@@ -49,12 +49,21 @@ once.
 1. Download `IA Desktop-<version>-macOS-arm64.dmg` (Apple Silicon) or
    `…-macOS-x64.dmg` (Intel).
 2. Open the `.dmg` and drag **IA Desktop** into **Applications**.
-3. First launch (you only do this once):
-   - **macOS Sequoia (15)+:** open the app, click **Done** on the warning, then
-     **System Settings → Privacy & Security → Open Anyway**.
-   - **macOS Sonoma (14) and older:** right-click the app → **Open** → **Open**.
-   - If it says *"is damaged"*, run
-     `xattr -dr com.apple.quarantine "/Applications/IA Desktop.app"`.
+3. First launch — macOS shows one of two warnings (both mean "unsigned"; you
+   only do this once):
+   - **If it says *"IA Desktop.app" is damaged and can't be opened… Move it to
+     the Bin*** — common when downloaded via a browser / on **Sequoia (15)+**.
+     The app is **not** damaged and there's no "Open Anyway" button. Click
+     **Cancel**, then run this in **Terminal** and re-open the app:
+     ```bash
+     xattr -dr com.apple.quarantine "/Applications/IA Desktop.app"
+     ```
+   - **If it says *Apple could not verify…* / *unidentified developer*** —
+     **Sequoia (15)+:** open it, click **Done**, then **System Settings →
+     Privacy & Security → Open Anyway**. **Sonoma (14) and older:** right-click
+     the app → **Open** → **Open**.
+
+   Full step-by-step with both dialogs: [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ### Windows
 1. Download `IA Desktop Setup <version>.exe`.

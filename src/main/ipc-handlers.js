@@ -11,7 +11,7 @@
 
 const path = require('node:path');
 
-const { resolveDownloadPlan, isRealFile, parsePatterns, FORMAT_PRESETS } = require('./download-prefs');
+const { resolveDownloadPlan, isRealFile, parsePatterns, formatForItem, FORMAT_PRESETS } = require('./download-prefs');
 const { normalizePrefs } = require('../shared/view-prefs');
 const { validateDownloadItems, validateDestRoot, containWithin } = require('./ipc-validate');
 const { verifyFile } = require('./checksum');
@@ -63,29 +63,36 @@ function sanitizeRel(name) {
  * list have their metadata fetched via `ia.getMetadata`. Each entry carries the
  * item directory and the local save-as name.
  */
-async function buildWorkList(items, { format, rename, include, exclude, subfolders }, destRoot, ia) {
+async function buildWorkList(items, { formatText, formatOther, rename, include, exclude, subfolders }, destRoot, ia) {
   const work = [];
   const fallbacks = []; // { identifier, usedFormat } per item that fell back
   let lastDir = destRoot;
   for (const item of items) {
     let files = item.files;
+    let mediatype = item.mediatype;
     if (!files || !files.length) {
       const md = await ia.getMetadata(item.identifier);
       files = (md.files || []).filter(isRealFile);
       if (!item.title && md.metadata) {
         item.title = Array.isArray(md.metadata.title) ? md.metadata.title[0] : md.metadata.title;
       }
+      if (mediatype == null && md.metadata) mediatype = md.metadata.mediatype;
     }
+    // Choose the format from the item's mediatype: a "texts" item follows the
+    // Text dropdown, anything else the Other dropdown. The texts fallback tail
+    // (largest vs all) tracks the Other dropdown too.
+    const { format, fallbackTail } = formatForItem(mediatype, formatText, formatOther);
     // Graceful fallback: if the chosen format matches nothing for this item,
     // take the next-best readable file instead of failing outright.
     const { plan, usedFormat, fellBack } = resolveDownloadPlan(files, {
       format,
+      fallbackTail,
       rename,
       title: item.title || '',
       include,
       exclude,
     });
-    if (fellBack) fallbacks.push({ identifier: item.identifier, usedFormat });
+    if (fellBack) fallbacks.push({ identifier: item.identifier, usedFormat, requestedFormat: format });
     // #5: a per-item subfolder only when the pref is on; otherwise files go
     // straight into the destination folder (the default, "flat").
     const itemDir = subfolders ? path.join(destRoot, sanitizeDir(item.identifier)) : destRoot;
@@ -117,7 +124,11 @@ async function handleDownloadStart(
   { ia, send, verify = verifyFile, log = logger, sleep = defaultSleep }
 ) {
   const np = normalizePrefs(prefs || {});
-  const format = np.format;
+  // Two-dropdown format model: texts items use formatText (pdf/text_pdf/epub/
+  // text), other mediatypes use formatOther (largest/all). Per-item choice is
+  // made in buildWorkList via formatForItem.
+  const formatText = np.formatText;
+  const formatOther = np.formatOther;
   const rename = np.rename;
   const subfolders = np.downloadSubfolders; // #5
   const delayMs = np.downloadDelaySec * 1000; // #16: pause between items
@@ -129,25 +140,27 @@ async function handleDownloadStart(
     validateDownloadItems(items);
     validateDestRoot(destRoot);
 
-    const { work, lastDir, fallbacks } = await buildWorkList(items, { format, rename, include, exclude, subfolders }, destRoot, ia);
+    const { work, lastDir, fallbacks } = await buildWorkList(items, { formatText, formatOther, rename, include, exclude, subfolders }, destRoot, ia);
 
     if (!work.length) {
-      log.warn('download: no matching files', { items: items.length, format });
+      log.warn('download: no matching files', { items: items.length, formatText, formatOther });
       send({ phase: 'error', message: 'This item has no downloadable files.' });
       return { ok: false, error: 'No files to download.' };
     }
     // Soft warning: one or more items didn't have the chosen format, so we fell
     // back to the next-best file. Tell the user instead of failing.
     if (fallbacks && fallbacks.length) {
-      const used = formatLabel(fallbacks[0].usedFormat);
+      const first = fallbacks[0];
+      const used = formatLabel(first.usedFormat);
+      const requested = formatLabel(first.requestedFormat);
       const message =
         fallbacks.length === 1
-          ? `No “${formatLabel(format)}” for this item — downloading ${used} instead.`
-          : `${fallbacks.length} item(s) had no “${formatLabel(format)}” — downloading ${used} instead.`;
-      log.warn('download: format fallback', { requested: format, used: fallbacks[0].usedFormat, items: fallbacks.length });
+          ? `No “${requested}” for this item — downloading ${used} instead.`
+          : `${fallbacks.length} item(s) had no “${requested}” — downloading ${used} instead.`;
+      log.warn('download: format fallback', { requested: first.requestedFormat, used: first.usedFormat, items: fallbacks.length });
       send({ phase: 'notice', level: 'warn', message });
     }
-    log.info('download started', { items: items.length, files: work.length, format, dest: destRoot });
+    log.info('download started', { items: items.length, files: work.length, formatText, formatOther, dest: destRoot });
 
     // Resolve + containment-check every destPath up front so a traversal fails
     // fast before any network work (M3).

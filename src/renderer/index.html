@@ -358,14 +358,32 @@
 
           <h3 class="prefs-h">Which files to download</h3>
           <label>
-            File format
-            <select id="pref-format"></select>
+            Text items <span class="muted small">(books, documents — mediatype “texts”)</span>
+            <select id="pref-format-text">
+              <option value="pdf">PDF (image scan, no text layer)</option>
+              <option value="text_pdf">Searchable text PDF (OCR text layer)</option>
+              <option value="epub">EPUB</option>
+              <option value="text">Plain text (OCR)</option>
+            </select>
           </label>
           <p class="muted small">
             Scanned texts have two PDFs: the plain image scan and a larger
-            searchable version with an OCR text layer. <strong>“PDF only”</strong>
+            searchable version with an OCR text layer. <strong>“PDF (image scan)”</strong>
             grabs just the image scan (no text layer);
             <strong>“Searchable text PDF”</strong> grabs only the OCR’d one.
+          </p>
+          <label>
+            Everything else <span class="muted small">(audio, video, images, software, data…)</span>
+            <select id="pref-format-other">
+              <option value="largest">Largest file format</option>
+              <option value="all">All files</option>
+            </select>
+          </label>
+          <p class="muted small">
+            For non-text items, <strong>“Largest file format”</strong> downloads
+            every file of the single biggest format (the best-quality derivative);
+            <strong>“All files”</strong> downloads everything. If a text item has no
+            PDF/EPUB/text at all, it falls back to this choice too.
           </p>
 
           <label>

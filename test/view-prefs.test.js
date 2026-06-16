@@ -26,6 +26,28 @@ test('DEFAULT_PREFS keeps logging OFF by default (#1)', () => {
   assert.equal(vp.DEFAULT_PREFS.logging, false);
 });
 
+/* -------------- two-dropdown download format (text vs other) -------------- */
+
+test('DEFAULT_PREFS defaults text downloads to image PDF and other to largest', () => {
+  assert.equal(vp.DEFAULT_PREFS.formatText, 'pdf');
+  assert.equal(vp.DEFAULT_PREFS.formatOther, 'largest');
+});
+
+test('normalizePrefs validates formatText against the text presets', () => {
+  assert.equal(vp.normalizePrefs({ formatText: 'epub' }).formatText, 'epub');
+  assert.equal(vp.normalizePrefs({ formatText: 'text_pdf' }).formatText, 'text_pdf');
+  assert.equal(vp.normalizePrefs({ formatText: 'largest' }).formatText, 'pdf', 'non-text choice rejected');
+  assert.equal(vp.normalizePrefs({ formatText: 'bogus' }).formatText, 'pdf');
+  assert.equal(vp.normalizePrefs({}).formatText, 'pdf');
+});
+
+test('normalizePrefs validates formatOther to largest|all', () => {
+  assert.equal(vp.normalizePrefs({ formatOther: 'largest' }).formatOther, 'largest');
+  assert.equal(vp.normalizePrefs({ formatOther: 'all' }).formatOther, 'all');
+  assert.equal(vp.normalizePrefs({ formatOther: 'pdf' }).formatOther, 'largest', 'text choice rejected');
+  assert.equal(vp.normalizePrefs({}).formatOther, 'largest');
+});
+
 /* ----------------------- results per page --------------------------------- */
 
 test('DEFAULT_PREFS shows 200 results per page by default', () => {

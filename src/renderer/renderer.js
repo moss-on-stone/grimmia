@@ -371,7 +371,7 @@ function renderResults(docs) {
       el('div', { class: 'actions' }, [
         favStar({ identifier: id, title, mediatype: mt }), // #13 — inline, no overlap
         el('button', { class: 'ghost', text: 'Details', onclick: () => openItem(id) }),
-        el('button', { text: 'Download', onclick: () => quickDownload(id, title) }),
+        el('button', { text: 'Download', onclick: () => quickDownload(id, title, mt) }),
       ]),
     ]);
     // #19: right-click offers Copy Title / Copy Creator.
@@ -1011,7 +1011,7 @@ function renderItem(identifier, data) {
     : [
         el('button', {
           text: 'Download all',
-          onclick: () => startDownload(toDownloadItems(identifier, itemTitle, files), itemTitle),
+          onclick: () => startDownload(toDownloadItems(identifier, itemTitle, files, firstOf(md.mediatype)), itemTitle),
         }),
         el('button', {
           class: 'ghost',
@@ -1019,7 +1019,7 @@ function renderItem(identifier, data) {
           onclick: () => {
             const picked = files.filter((_, i) => body.querySelector(`#pick-${i}`)?.checked);
             if (!picked.length) return toast('No files selected.', 'err');
-            startDownload(toDownloadItems(identifier, itemTitle, picked), itemTitle);
+            startDownload(toDownloadItems(identifier, itemTitle, picked, firstOf(md.mediatype)), itemTitle);
           },
         }),
       ];
@@ -1081,7 +1081,7 @@ function renderItem(identifier, data) {
           el('td', {}, el('button', {
             class: 'ghost dl-one',
             text: 'Get',
-            onclick: () => startDownload(toDownloadItems(identifier, itemTitle, [f]), `${itemTitle} — ${f.name}`),
+            onclick: () => startDownload(toDownloadItems(identifier, itemTitle, [f], firstOf(md.mediatype)), `${itemTitle} — ${f.name}`),
           })),
         ])
       );
@@ -1130,7 +1130,7 @@ async function renderCollectionMembers(identifier, body) {
           ]),
           el('div', { class: 'member-actions' }, [
             el('button', { class: 'ghost', text: 'Details', onclick: () => openItem(id) }),
-            el('button', { text: 'Download', onclick: () => quickDownload(id, title) }),
+            el('button', { text: 'Download', onclick: () => quickDownload(id, title, firstOf(d.mediatype)) }),
           ]),
         ])
       );
@@ -1283,9 +1283,12 @@ async function startDownload(items, label) {
   window.ia.download.start({ jobId, items, prefs, destRoot, label: title }).catch((e) => toast(e.message, 'err'));
 }
 
-// Download a single item (its files resolved + filtered in main).
-function quickDownload(identifier, title) {
-  startDownload([{ identifier, title }], title || identifier);
+// Download a single item (its files resolved + filtered in main). Passing the
+// known mediatype lets main pick the Text vs Other format without re-fetching.
+function quickDownload(identifier, title, mediatype) {
+  const item = { identifier, title };
+  if (mediatype) item.mediatype = mediatype;
+  startDownload([item], title || identifier);
 }
 
 // #2: download every member of a collection.
@@ -1677,8 +1680,8 @@ async function initSettings() {
   initFavorites(s); // #13: load favorites
   initUploadTemplates(s); // #15: load metadata templates
   populateUploadLanguages(); // upload language dropdown (top 15 IA codes)
-  await populateFormatPresets();
-  $('#pref-format').value = prefs.format;
+  $('#pref-format-text').value = prefs.formatText;
+  $('#pref-format-other').value = prefs.formatOther;
   $('#pref-rename').value = prefs.rename;
   $('#pref-include').value = prefs.includeGlobs || '';
   $('#pref-exclude').value = prefs.excludeGlobs || '';
@@ -1725,13 +1728,6 @@ function renderDest() {
   $('#pref-dest-path').textContent = txt;
 }
 
-async function populateFormatPresets() {
-  const presets = await window.ia.prefs.formatPresets();
-  const sel = $('#pref-format');
-  sel.innerHTML = '';
-  for (const p of presets) sel.appendChild(el('option', { value: p.key, text: p.label }));
-}
-
 function updatePrefExample() {
   const ex =
     prefs.rename === 'replace'
@@ -1760,9 +1756,15 @@ async function chooseDest() {
 $('#choose-dest').addEventListener('click', chooseDest);
 $('#pref-choose-dest').addEventListener('click', chooseDest);
 
-$('#pref-format').addEventListener('change', async (e) => {
-  prefs.format = e.target.value;
-  await window.ia.settings.update({ format: prefs.format });
+// Two-dropdown download format: Text items vs everything else.
+$('#pref-format-text').addEventListener('change', async (e) => {
+  prefs.formatText = e.target.value;
+  await window.ia.settings.update({ formatText: prefs.formatText });
+  flashSaved();
+});
+$('#pref-format-other').addEventListener('change', async (e) => {
+  prefs.formatOther = e.target.value;
+  await window.ia.settings.update({ formatOther: prefs.formatOther });
   flashSaved();
 });
 $('#pref-rename').addEventListener('change', async (e) => {

@@ -18,7 +18,9 @@
 
   /** Default preferences. Download defaults to PDF only (not everything). */
   const DEFAULT_PREFS = Object.freeze({
-    format: 'pdf', // download format preset key
+    format: 'pdf', // legacy single download-format key (kept for back-compat)
+    formatText: 'pdf', // format for "texts" items: pdf | text_pdf | epub | text
+    formatOther: 'largest', // format for non-text items: largest | all
     rename: 'replace', // filename rename mode — default to the item title (collision-safe)
     viewMode: 'compact', // 'grid' | 'compact' — default to the compact list (no previews) (#6)
     showSubjects: false, // show subject tags on result cards
@@ -52,6 +54,8 @@
   const THEMES = ['system', 'light', 'dark'];
   const DENSITIES = ['comfortable', 'cozy', 'compact'];
   const PER_PAGE_OPTIONS = [50, 100, 200];
+  const TEXT_FORMATS = ['pdf', 'text_pdf', 'epub', 'text']; // Text dropdown options
+  const OTHER_FORMATS = ['largest', 'all']; // Other dropdown options
 
   /** Merge a partial prefs object onto the defaults, validating values. */
   function normalizePrefs(p = {}) {
@@ -67,6 +71,8 @@
     out.downloadSubfolders = coerceBool(out.downloadSubfolders); // (#5)
     out.downloadDelaySec = clampDelay(out.downloadDelaySec); // (#16)
     out.perPage = PER_PAGE_OPTIONS.includes(Number(out.perPage)) ? Number(out.perPage) : DEFAULT_PREFS.perPage;
+    out.formatText = TEXT_FORMATS.includes(out.formatText) ? out.formatText : DEFAULT_PREFS.formatText;
+    out.formatOther = OTHER_FORMATS.includes(out.formatOther) ? out.formatOther : DEFAULT_PREFS.formatOther;
     return out;
   }
 
@@ -112,6 +118,8 @@
     THEMES,
     DENSITIES,
     PER_PAGE_OPTIONS,
+    TEXT_FORMATS,
+    OTHER_FORMATS,
     normalizePrefs,
     resolveTheme,
     thumbnailUrl,

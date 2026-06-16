@@ -45,6 +45,16 @@ test('toDownloadItems falls back to identifier when title is blank', () => {
   assert.equal(out[0].title, 'my-id');
 });
 
+test('toDownloadItems carries mediatype when provided (for Text/Other format choice)', () => {
+  const out = u.toDownloadItems('my-id', 'My Title', [{ name: 'a.pdf' }], 'texts');
+  assert.equal(out[0].mediatype, 'texts');
+});
+
+test('toDownloadItems omits mediatype when not provided', () => {
+  const out = u.toDownloadItems('my-id', 'My Title', [{ name: 'a.pdf' }]);
+  assert.ok(!('mediatype' in out[0]), 'no mediatype key when omitted');
+});
+
 /* ----------------------------- makeJobIdFactory --------------------------- */
 /**
  * H5: jobSeq reset to 0 on every renderer reload, so a reload during an

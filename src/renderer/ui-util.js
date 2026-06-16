@@ -111,9 +111,12 @@
    * Files are only included when a non-empty list is given; otherwise main
    * resolves them from metadata. Title falls back to the identifier.
    */
-  function toDownloadItems(identifier, title, files) {
+  function toDownloadItems(identifier, title, files, mediatype) {
     const item = { identifier, title: title || identifier };
     if (Array.isArray(files) && files.length) item.files = files;
+    // Carry the mediatype so main can pick the Text vs Other download format
+    // without re-fetching metadata.
+    if (mediatype) item.mediatype = mediatype;
     return [item];
   }
 

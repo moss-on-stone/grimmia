@@ -25,6 +25,10 @@ const path = require('node:path');
 // chain always ends at 'all'.
 const FORMAT_PRESETS = [
   { key: 'all', label: 'All files', formats: null, exts: null, fallback: [] },
+  // "Largest file format": all files of the format whose files total the most
+  // bytes. Computed per item (not a fixed format list), so it's handled
+  // specially in filterFilesByFormat. Meant for non-text archive types.
+  { key: 'largest', label: 'Largest file format', computed: 'largest', fallback: ['all'] },
   {
     key: 'pdf',
     label: 'PDF only (image scan, no text layer)',
@@ -67,10 +71,60 @@ function isRealFile(f) {
   return true;
 }
 
+/**
+ * Keep every file of the format whose files total the most bytes (the "largest
+ * file format"). Ties break by format name for determinism. Returns [] if there
+ * are no real files.
+ */
+function filesOfLargestFormat(realFiles) {
+  const totals = new Map(); // format -> total bytes
+  for (const f of realFiles) {
+    const fmt = f.format || '(unknown)';
+    totals.set(fmt, (totals.get(fmt) || 0) + (Number(f.size) || 0));
+  }
+  if (!totals.size) return [];
+  let bestFmt = null;
+  let bestBytes = -1;
+  for (const [fmt, bytes] of totals) {
+    if (bytes > bestBytes || (bytes === bestBytes && fmt < bestFmt)) {
+      bestFmt = fmt;
+      bestBytes = bytes;
+    }
+  }
+  return realFiles.filter((f) => (f.format || '(unknown)') === bestFmt);
+}
+
+// Text-document presets, in preference order, used for the text-first fallback
+// on "texts" items (no PDF → try searchable PDF, then EPUB, then plain text).
+const TEXT_FORMAT_ORDER = ['pdf', 'text_pdf', 'epub', 'text'];
+
+/**
+ * Choose the download format for an item from its mediatype and the two user
+ * preferences. A "texts" item follows `formatText` (pdf/text_pdf/epub/text);
+ * any other mediatype follows `formatOther` (largest/all).
+ *
+ * Returns `{ format, fallbackTail }` where `fallbackTail` is what a texts item
+ * should fall back to when NO text format exists at all — it tracks the Other
+ * dropdown (largest by default, or 'all' if the user picked All files).
+ *
+ * @param {string|string[]} mediatype  the item's mediatype
+ * @param {string} formatText  the Text dropdown choice
+ * @param {string} formatOther the Other dropdown choice ('largest' | 'all')
+ */
+function formatForItem(mediatype, formatText, formatOther) {
+  const mt = String(Array.isArray(mediatype) ? mediatype[0] : mediatype || '').trim().toLowerCase();
+  const other = formatOther === 'all' ? 'all' : 'largest';
+  if (mt === 'texts') {
+    return { format: formatText || 'pdf', fallbackTail: other };
+  }
+  return { format: other, fallbackTail: other };
+}
+
 /** Filter an item's files by a format preset key. */
 function filterFilesByFormat(files, presetKey) {
   const real = (files || []).filter(isRealFile);
   const preset = PRESET_BY_KEY[presetKey];
+  if (preset && preset.computed === 'largest') return filesOfLargestFormat(real);
   if (!preset || preset.key === 'all' || (!preset.formats && !preset.exts)) return real;
 
   const formats = new Set((preset.formats || []).map((s) => s.toLowerCase()));
@@ -216,7 +270,22 @@ function planDownload(files, { format = 'all', rename = 'off', title = '', inclu
 function resolveDownloadPlan(files, opts = {}) {
   const requested = opts.format || 'all';
   const preset = PRESET_BY_KEY[requested];
-  const chain = [requested, ...((preset && preset.fallback) || []), 'all'];
+  // When the caller supplies a `fallbackTail` (the Other dropdown choice), build
+  // the chain explicitly: for a TEXT format, try the other text formats first
+  // (text-first), then the tail (largest or all). Otherwise keep the preset's
+  // own static fallback chain (back-compat for callers that don't pass a tail).
+  let chain;
+  if (opts.fallbackTail) {
+    const tail = opts.fallbackTail; // 'largest' | 'all'
+    if (TEXT_FORMAT_ORDER.includes(requested)) {
+      const otherText = TEXT_FORMAT_ORDER.filter((k) => k !== requested);
+      chain = [requested, ...otherText, tail, 'all'];
+    } else {
+      chain = [requested, tail, 'all'];
+    }
+  } else {
+    chain = [requested, ...((preset && preset.fallback) || []), 'all'];
+  }
   const tried = new Set();
   for (const fmt of chain) {
     if (tried.has(fmt)) continue;
@@ -241,6 +310,7 @@ module.exports = {
   FORMAT_PRESETS,
   isRealFile,
   filterFilesByFormat,
+  formatForItem,
   globToRegExp,
   matchesFilters,
   parsePatterns,

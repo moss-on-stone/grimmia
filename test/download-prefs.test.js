@@ -11,6 +11,7 @@ const assert = require('node:assert/strict');
 const {
   FORMAT_PRESETS,
   filterFilesByFormat,
+  formatForItem,
   sanitizeFilename,
   applyTitleToFilename,
   planDownload,
@@ -57,6 +58,108 @@ test('preset "pdf" falls back to .pdf files when no PDF format is labelled', () 
   // Some items have a .pdf with an empty/odd format string and no text variant.
   const odd = [{ name: 'scan.pdf', format: '', size: 50 }];
   assert.deepEqual(filterFilesByFormat(odd, 'pdf').map((f) => f.name), ['scan.pdf']);
+});
+
+/* ------------------------- preset "largest" ------------------------------- */
+// "Largest file format": group real files by their `format`, sum bytes per
+// format, and keep ALL files of the format with the greatest total size. Meant
+// for non-text items (audio/video/images/etc.) where you want the best-quality
+// derivative without naming the format.
+
+test('preset "largest" keeps every file of the biggest-by-total-bytes format', () => {
+  // In FILES the JP2 ZIP format totals 500 bytes — the largest — so only it.
+  const out = filterFilesByFormat(FILES, 'largest').map((f) => f.name);
+  assert.deepEqual(out, ['book_jp2.zip']);
+});
+
+test('preset "largest" sums bytes ACROSS files of the same format, not per-file', () => {
+  // Two MP3s (200+200=400) beat one FLAC (350), so the format MP3 wins.
+  const audio = [
+    { name: 'a.flac', format: 'FLAC', size: 350 },
+    { name: 't1.mp3', format: 'VBR MP3', size: 200 },
+    { name: 't2.mp3', format: 'VBR MP3', size: 200 },
+  ];
+  assert.deepEqual(
+    filterFilesByFormat(audio, 'largest').map((f) => f.name),
+    ['t1.mp3', 't2.mp3']
+  );
+});
+
+test('preset "largest" ignores metadata/derivative noise', () => {
+  const out = filterFilesByFormat(FILES, 'largest');
+  assert.ok(!out.find((f) => f.name === 'book_meta.xml'));
+  assert.ok(!out.find((f) => f.name === '__ia_thumb.jpg'));
+});
+
+test('preset "largest" returns [] when there are no real files', () => {
+  assert.deepEqual(filterFilesByFormat([{ name: 'x_meta.xml', format: 'Metadata', source: 'metadata' }], 'largest'), []);
+});
+
+test('FORMAT_PRESETS includes a "largest" preset with a friendly label', () => {
+  const p = FORMAT_PRESETS.find((x) => x.key === 'largest');
+  assert.ok(p, 'a largest preset should exist');
+  assert.match(p.label, /largest/i);
+});
+
+/* ----------------- mediatype-driven format choice ------------------------- */
+// A "texts" item follows the Text dropdown (pdf/text_pdf/epub/text); any other
+// mediatype follows the Other dropdown (largest/all).
+
+test('formatForItem: a texts item uses the Text dropdown choice', () => {
+  assert.equal(formatForItem('texts', 'pdf', 'largest').format, 'pdf');
+  assert.equal(formatForItem('texts', 'epub', 'all').format, 'epub');
+});
+
+test('formatForItem: a non-texts item uses the Other dropdown choice', () => {
+  assert.equal(formatForItem('audio', 'pdf', 'largest').format, 'largest');
+  assert.equal(formatForItem('movies', 'pdf', 'all').format, 'all');
+  assert.equal(formatForItem('image', 'text_pdf', 'largest').format, 'largest');
+});
+
+test('formatForItem: an array/odd mediatype is read as its first value; missing → treated as non-texts', () => {
+  assert.equal(formatForItem(['texts'], 'pdf', 'largest').format, 'pdf');
+  assert.equal(formatForItem(undefined, 'pdf', 'all').format, 'all', 'no mediatype → Other');
+  assert.equal(formatForItem('TEXTS', 'pdf', 'largest').format, 'pdf', 'case-insensitive');
+});
+
+test('formatForItem: texts fallback tail follows the Other dropdown (largest vs all)', () => {
+  // The texts-item fallback when NO text format exists is governed by Other.
+  assert.equal(formatForItem('texts', 'pdf', 'largest').fallbackTail, 'largest');
+  assert.equal(formatForItem('texts', 'pdf', 'all').fallbackTail, 'all');
+});
+
+/* ------- resolveDownloadPlan: texts item with no PDF falls back ----------- */
+
+test('resolveDownloadPlan for a texts item: no PDF → tries other text formats first', () => {
+  // No PDF, but an EPUB exists → text-first fallback picks the EPUB, not JP2.
+  const noPdf = [
+    { name: 'b.epub', format: 'EPUB', size: 20 },
+    { name: 'b_jp2.zip', format: 'Single Page Processed JP2 ZIP', size: 500 },
+  ];
+  const { plan, usedFormat } = resolveDownloadPlan(noPdf, { format: 'pdf', fallbackTail: 'largest', rename: 'off' });
+  assert.equal(usedFormat, 'epub');
+  assert.deepEqual(plan.map((f) => f.name), ['b.epub']);
+});
+
+test('resolveDownloadPlan for a texts item: NO text format at all → falls back to largest', () => {
+  // Item has only image derivatives (no pdf/epub/text) → largest format wins.
+  const noText = [
+    { name: 'b_jp2.zip', format: 'Single Page Processed JP2 ZIP', size: 500 },
+    { name: 'b.jpg', format: 'JPEG', size: 30 },
+  ];
+  const { plan, usedFormat } = resolveDownloadPlan(noText, { format: 'pdf', fallbackTail: 'largest', rename: 'off' });
+  assert.equal(usedFormat, 'largest');
+  assert.deepEqual(plan.map((f) => f.name), ['b_jp2.zip']);
+});
+
+test('resolveDownloadPlan for a texts item: no text + Other="all" → falls back to all', () => {
+  const noText = [
+    { name: 'b_jp2.zip', format: 'Single Page Processed JP2 ZIP', size: 500 },
+    { name: 'b.jpg', format: 'JPEG', size: 30 },
+  ];
+  const { plan, usedFormat } = resolveDownloadPlan(noText, { format: 'pdf', fallbackTail: 'all', rename: 'off' });
+  assert.equal(usedFormat, 'all');
+  assert.deepEqual(plan.map((f) => f.name).sort(), ['b.jpg', 'b_jp2.zip']);
 });
 
 test('preset "pdf" does NOT fall back and grab the _text.pdf via its extension', () => {

@@ -138,6 +138,87 @@ test('#5 with downloadSubfolders on: each item gets its own subfolder', async ()
   }
 });
 
+/* -------- mediatype-driven format: Text dropdown vs Other dropdown -------- */
+
+test('a texts item follows the Text dropdown (formatText=pdf → image PDF only)', async () => {
+  const ia = makeStubIa();
+  const { send } = makeSendSpy();
+  const dir = tmpDir();
+  try {
+    const files = [
+      { name: 'book.pdf', format: 'Image Container PDF', size: 100 },
+      { name: 'book_jp2.zip', format: 'Single Page Processed JP2 ZIP', size: 900 },
+    ];
+    const res = await handleDownloadStart(
+      {
+        items: [{ identifier: 'a-text', mediatype: 'texts', files }],
+        prefs: { formatText: 'pdf', formatOther: 'largest', rename: 'off' },
+        destRoot: dir,
+      },
+      { ia, send }
+    );
+    assert.equal(res.ok, true);
+    assert.equal(ia.calls.length, 1, 'only the image PDF for a texts item on formatText=pdf');
+    assert.match(ia.calls[0].destPath, /book\.pdf$/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a non-texts item follows the Other dropdown (formatOther=largest)', async () => {
+  const ia = makeStubIa();
+  const { send } = makeSendSpy();
+  const dir = tmpDir();
+  try {
+    // An audio item: largest format = the two MP3s (400) over the FLAC (350).
+    const files = [
+      { name: 'a.flac', format: 'FLAC', size: 350 },
+      { name: 't1.mp3', format: 'VBR MP3', size: 200 },
+      { name: 't2.mp3', format: 'VBR MP3', size: 200 },
+    ];
+    const res = await handleDownloadStart(
+      {
+        items: [{ identifier: 'an-audio', mediatype: 'audio', files }],
+        prefs: { formatText: 'pdf', formatOther: 'largest', rename: 'off' },
+        destRoot: dir,
+      },
+      { ia, send }
+    );
+    assert.equal(res.ok, true);
+    const got = ia.calls.map((c) => c.destPath).sort();
+    assert.equal(got.length, 2, 'both MP3s (largest format) download');
+    assert.match(got[0], /t1\.mp3$/);
+    assert.match(got[1], /t2\.mp3$/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('mediatype is read from fetched metadata when the item has no files', async () => {
+  const ia = makeStubIa({
+    getMetadata: async () => ({
+      metadata: { title: 'Vid', mediatype: 'movies' },
+      files: [
+        { name: 'v.mp4', format: 'h.264', size: 900 },
+        { name: 'v.gif', format: 'Animated GIF', size: 30 },
+      ],
+    }),
+  });
+  const { send } = makeSendSpy();
+  const dir = tmpDir();
+  try {
+    const res = await handleDownloadStart(
+      { items: [{ identifier: 'needs-meta' }], prefs: { formatText: 'pdf', formatOther: 'largest', rename: 'off' }, destRoot: dir },
+      { ia, send }
+    );
+    assert.equal(res.ok, true);
+    assert.equal(ia.calls.length, 1, 'largest format (mp4) only');
+    assert.match(ia.calls[0].destPath, /v\.mp4$/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 /* --------------------- inter-download delay (#16) ------------------------- */
 
 test('#16 waits the configured delay BETWEEN items (not before the first, not within an item)', async () => {
@@ -218,9 +299,10 @@ test('falls back (soft notice) instead of erroring when the format is missing bu
   const { send, phases } = makeSendSpy();
   const dir = tmpDir();
   try {
-    // Requested 'pdf' but the item only has a plain-text file → fall back to it.
+    // A texts item: Text dropdown = pdf, but it only has a plain-text file →
+    // text-first fallback lands on the .txt and emits a soft notice.
     const res = await handleDownloadStart(
-      { items: [{ identifier: 'good-id', files: [{ name: 'a.txt', format: 'Text', size: 1 }] }], prefs: { format: 'pdf' }, destRoot: dir },
+      { items: [{ identifier: 'good-id', mediatype: 'texts', files: [{ name: 'a.txt', format: 'Text', size: 1 }] }], prefs: { formatText: 'pdf', formatOther: 'largest' }, destRoot: dir },
       { ia, send }
     );
     assert.equal(res.ok, true, 'should download the fallback, not fail');

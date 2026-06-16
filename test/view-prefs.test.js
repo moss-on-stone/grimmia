@@ -89,6 +89,20 @@ test('normalizePrefs coerces logging to a boolean (#1)', () => {
   assert.equal(vp.normalizePrefs({}).logging, false);
 });
 
+/* -------- re-download vs skip existing files (same filename) -------------- */
+
+test('DEFAULT_PREFS SKIPS already-downloaded files by default (reDownload off)', () => {
+  assert.equal(vp.DEFAULT_PREFS.reDownload, false);
+});
+
+test('normalizePrefs coerces reDownload to a boolean', () => {
+  assert.equal(vp.normalizePrefs({ reDownload: true }).reDownload, true);
+  assert.equal(vp.normalizePrefs({ reDownload: 'true' }).reDownload, true);
+  assert.equal(vp.normalizePrefs({ reDownload: 'false' }).reDownload, false);
+  assert.equal(vp.normalizePrefs({ reDownload: 0 }).reDownload, false);
+  assert.equal(vp.normalizePrefs({}).reDownload, false);
+});
+
 /* ------------- per-download subfolder, flat by default (#5) --------------- */
 
 test('DEFAULT_PREFS does NOT put each download in its own subfolder (flat is default) (#5)', () => {

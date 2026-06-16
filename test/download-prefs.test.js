@@ -17,6 +17,7 @@ const {
   applyTitleToFilename,
   planDownload,
   resolveDownloadPlan,
+  decideExisting,
 } = require('../src/main/download-prefs');
 
 // A representative IA "texts" item file list. Real scanned items expose TWO
@@ -100,6 +101,42 @@ test('FORMAT_PRESETS includes a "largest" preset with a friendly label', () => {
   const p = FORMAT_PRESETS.find((x) => x.key === 'largest');
   assert.ok(p, 'a largest preset should exist');
   assert.match(p.label, /largest/i);
+});
+
+/* --------- decideExisting: skip vs resume vs re-download ------------------ */
+// Decides what to do when a file with the same name may already exist on disk.
+// Pure (filesystem-agnostic): the caller passes whether it exists + its size.
+// The filesystem's own case-insensitivity (Windows/macOS) is handled by the
+// existsSync the caller does — this just decides the action.
+
+test('decideExisting: re-download preference always overwrites (fresh)', () => {
+  assert.equal(decideExisting({ exists: true, existingSize: 100, knownSize: 100, reDownload: true }).action, 'fresh');
+  assert.equal(decideExisting({ exists: true, existingSize: 50, knownSize: 100, reDownload: true }).action, 'fresh');
+  assert.equal(decideExisting({ exists: false, reDownload: true }).action, 'fresh');
+});
+
+test('decideExisting: a non-existent file is always downloaded fresh', () => {
+  assert.equal(decideExisting({ exists: false, knownSize: 100, reDownload: false }).action, 'fresh');
+});
+
+test('decideExisting: an existing same-name file is SKIPPED by default (the feature)', () => {
+  // Same filename present → assume already downloaded, regardless of size match.
+  assert.equal(decideExisting({ exists: true, existingSize: 100, knownSize: 100, reDownload: false }).action, 'skip');
+  // Even with NO known size, an existing same-name file is treated as done.
+  assert.equal(decideExisting({ exists: true, existingSize: 999, knownSize: null, reDownload: false }).action, 'skip');
+  // A larger-than-expected existing file is still a same-name file → skip.
+  assert.equal(decideExisting({ exists: true, existingSize: 500, knownSize: 100, reDownload: false }).action, 'skip');
+});
+
+test('decideExisting: a KNOWN-partial file resumes rather than skipping (strictly better)', () => {
+  // size known and the existing file is shorter → resume from its end byte.
+  const d = decideExisting({ exists: true, existingSize: 40, knownSize: 100, reDownload: false });
+  assert.equal(d.action, 'resume');
+  assert.equal(d.startByte, 40);
+});
+
+test('decideExisting: a known-partial file is re-downloaded fresh when reDownload is on', () => {
+  assert.equal(decideExisting({ exists: true, existingSize: 40, knownSize: 100, reDownload: true }).action, 'fresh');
 });
 
 /* ----------------- mediatype-driven format choice ------------------------- */

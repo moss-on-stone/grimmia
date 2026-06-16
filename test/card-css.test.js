@@ -228,6 +228,13 @@ test('#16 Preferences has an inter-download delay number input', () => {
   assert.match(html, /id="pref-download-delay"/, 'expected a #pref-download-delay input');
 });
 
+test('Preferences has a re-download (vs skip existing) toggle, wired up', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
+  assert.match(html, /id="pref-redownload"/, 'expected a #pref-redownload toggle');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'renderer.js'), 'utf8');
+  assert.match(src, /#pref-redownload'\)\.addEventListener/, 're-download toggle must be wired up');
+});
+
 test('#4 Preferences has Clear-search-cache and Clear-saved buttons', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
   assert.match(html, /id="clear-recent-searches"/, 'expected a #clear-recent-searches button');

@@ -22,6 +22,7 @@ const path = require('node:path');
 const { URL } = require('node:url');
 
 const core = require('./ia-core');
+const { decideExisting } = require('./download-prefs');
 const { IAError } = core;
 const { HOST, S3_HOST, USER_AGENT } = require('../shared/constants');
 
@@ -199,21 +200,21 @@ function downloadFile({ url, destPath, expectedSize, onProgress, signal, force, 
 
     const knownSize = expectedSize != null ? Number(expectedSize) : null;
 
+    // Decide skip / resume / fresh for a possibly-existing same-named file.
+    // `fs.existsSync` resolves case-insensitively on Windows + default macOS, so
+    // "Book.pdf" already on disk counts as "book.pdf" present — matching the OS.
+    // `force` (the reDownload pref, and the H4 checksum-mismatch retry) overrides
+    // skip/resume and always re-downloads fresh.
     let startByte = 0;
-    // Only consider resume/skip when we actually know the expected size. Files
-    // with no recorded size are downloaded fresh — never appended (H1.1): an
-    // already-complete no-size file used to be re-Range'd and grown forever.
-    // `force` (H4) bypasses the size-based skip — used to re-download a file
-    // that matched on size but FAILED its checksum.
-    if (!force && knownSize != null && fs.existsSync(destPath)) {
-      const stat = fs.statSync(destPath);
-      if (stat.size === knownSize) {
-        resolve({ path: destPath, bytes: stat.size, skipped: true });
-        return;
-      }
-      if (stat.size > 0 && stat.size < knownSize) {
-        startByte = stat.size;
-      }
+    const exists = fs.existsSync(destPath);
+    const existingSize = exists ? fs.statSync(destPath).size : 0;
+    const decision = decideExisting({ exists, existingSize, knownSize, reDownload: !!force });
+    if (decision.action === 'skip') {
+      resolve({ path: destPath, bytes: existingSize, skipped: true });
+      return;
+    }
+    if (decision.action === 'resume') {
+      startByte = decision.startByte;
     }
 
     const u = new URL(url);

@@ -33,6 +33,7 @@
     logging: false, // diagnostics/logging OFF by default (#1)
     downloadSubfolders: false, // a folder per downloaded item? off = flat into the download folder (#5)
     downloadDelaySec: 5, // seconds to wait between downloading items, 0..99 (#16)
+    reDownload: false, // re-download/overwrite files that already exist? off = skip them
   });
 
   const DELAY_MIN = 0;
@@ -70,6 +71,7 @@
     out.logging = coerceBool(out.logging); // (#1)
     out.downloadSubfolders = coerceBool(out.downloadSubfolders); // (#5)
     out.downloadDelaySec = clampDelay(out.downloadDelaySec); // (#16)
+    out.reDownload = coerceBool(out.reDownload);
     out.perPage = PER_PAGE_OPTIONS.includes(Number(out.perPage)) ? Number(out.perPage) : DEFAULT_PREFS.perPage;
     out.formatText = TEXT_FORMATS.includes(out.formatText) ? out.formatText : DEFAULT_PREFS.formatText;
     out.formatOther = OTHER_FORMATS.includes(out.formatOther) ? out.formatOther : DEFAULT_PREFS.formatOther;

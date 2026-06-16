@@ -193,6 +193,7 @@ async function handleDownloadStart(
   const rename = np.rename;
   const subfolders = np.downloadSubfolders; // #5
   const delayMs = np.downloadDelaySec * 1000; // #16: pause between items
+  const reDownload = np.reDownload; // re-download/overwrite existing files instead of skipping
   // #3: per-download glob include/exclude filters (raw strings from prefs).
   const include = parsePatterns((prefs || {}).includeGlobs);
   const exclude = parsePatterns((prefs || {}).excludeGlobs);
@@ -262,7 +263,9 @@ async function handleDownloadStart(
           onProgress: ({ received, total: t }) =>
             send({ phase: 'file-progress', index: i, total, name: w.saveAs, received, totalBytes: t }),
         });
-      let r = await doDownload(false);
+      // reDownload pref forces a fresh overwrite; otherwise an existing same-name
+      // file is skipped (decided in downloadFile via decideExisting).
+      let r = await doDownload(reDownload);
 
       // #4 + H4: verify against the published checksum. A file SKIPPED purely on
       // a size match is still verified when a checksum exists — a same-size-but-

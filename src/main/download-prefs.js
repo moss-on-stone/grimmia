@@ -323,6 +323,32 @@ function resolveDownloadPlan(files, opts = {}) {
   return { plan: [], usedFormat: requested, fellBack: false };
 }
 
+/**
+ * Decide what to do with a destination that may already hold a same-named file.
+ * Pure: the caller supplies whether the file exists and its size (it performs
+ * the `fs.existsSync`/`statSync`, so the OS's own case-insensitivity on Windows/
+ * macOS is honored automatically).
+ *
+ *  - reDownload on        → 'fresh' (always overwrite)
+ *  - file absent          → 'fresh'
+ *  - known-partial file   → 'resume' from its end byte (strictly better than
+ *                           skipping or restarting a big file)
+ *  - any other existing   → 'skip' (same filename present = assume already done)
+ *
+ * @returns {{action:'fresh'|'resume'|'skip', startByte?:number}}
+ */
+function decideExisting({ exists, existingSize, knownSize, reDownload }) {
+  if (reDownload) return { action: 'fresh' };
+  if (!exists) return { action: 'fresh' };
+  // A known-size file that's present but SHORTER is an interrupted download —
+  // resume it rather than skip (would leave a truncated file) or restart.
+  if (knownSize != null && existingSize > 0 && existingSize < knownSize) {
+    return { action: 'resume', startByte: existingSize };
+  }
+  // Same filename already on disk → treat as already downloaded.
+  return { action: 'skip' };
+}
+
 /** Insert " (n)" before the extension to make a colliding filename unique. */
 function disambiguate(name, n) {
   const ext = path.extname(name);
@@ -344,4 +370,5 @@ module.exports = {
   applyTitleToFilename,
   planDownload,
   resolveDownloadPlan,
+  decideExisting,
 };

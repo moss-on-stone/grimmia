@@ -413,6 +413,12 @@
           </label>
           <p class="muted small">A pause between consecutive item downloads to be gentle on archive.org. Default is 5 seconds.</p>
 
+          <label class="checkbox">
+            <input id="pref-redownload" type="checkbox" />
+            Re-download files that already exist
+          </label>
+          <p class="muted small">Off by default: if a file with the same name is already in the download folder, it's assumed downloaded and skipped. Turn on to always re-download and overwrite existing files.</p>
+
           <h3 class="prefs-h">Filename</h3>
           <label>
             Use the item title in the filename
@@ -557,6 +563,10 @@
             <li>Which files you get, the filename format, and the download folder are all set in
               <strong>Preferences</strong>. Files download one at a time and failed transfers retry
               automatically.</li>
+            <li><strong>Already-downloaded files are skipped</strong> — if a file with the same name is
+              already in the download folder, it's assumed downloaded and skipped, so re-running a
+              download (or a whole collection) only fetches what's missing. To force a fresh copy, turn on
+              <em>“Re-download files that already exist”</em> in Preferences.</li>
           </ul>
 
           <h3 class="prefs-h">Working with results</h3>

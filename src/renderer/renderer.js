@@ -1700,6 +1700,7 @@ async function initSettings() {
   $('#pref-logging').checked = prefs.logging; // #1
   $('#pref-subfolders').checked = prefs.downloadSubfolders; // #5
   $('#pref-download-delay').value = String(prefs.downloadDelaySec); // #16
+  $('#pref-redownload').checked = prefs.reDownload; // skip vs re-download existing files
   $('#pref-theme').value = prefs.theme;
   // #8: results-per-page (50/100/200) — normalized default is 200.
   ROWS = prefs.perPage;
@@ -1828,6 +1829,12 @@ $('#pref-logging').addEventListener('change', async (e) => {
 $('#pref-subfolders').addEventListener('change', async (e) => {
   prefs.downloadSubfolders = e.target.checked;
   await window.ia.settings.update({ downloadSubfolders: prefs.downloadSubfolders });
+  flashSaved();
+});
+// Re-download vs skip existing files.
+$('#pref-redownload').addEventListener('change', async (e) => {
+  prefs.reDownload = e.target.checked;
+  await window.ia.settings.update({ reDownload: prefs.reDownload });
   flashSaved();
 });
 // #16: inter-download delay (0–99 seconds). Clamp on commit.

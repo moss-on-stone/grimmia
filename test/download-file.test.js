@@ -93,12 +93,31 @@ test('rejects/restarts when a 206 Content-Range does not start at the requested 
   }
 });
 
-test('downloads fresh (no resume/append) when the size is unknown', async () => {
+test('an existing same-name file is SKIPPED by default (the skip-if-downloaded feature)', async () => {
+  const dest = tmpFile();
+  fs.writeFileSync(dest, 'OLD CONTENT'); // already on disk, same name
+  let served = false;
+  const srv = await startServer((_req, res) => {
+    served = true;
+    res.end('NEW CONTENT');
+  });
+  try {
+    // No known size, but the file exists → assume already downloaded, skip it.
+    const r = await ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: undefined });
+    assert.equal(r.skipped, true, 'an existing same-name file is skipped');
+    assert.equal(served, false, 'the server must not be hit when skipping');
+    assert.equal(fs.readFileSync(dest, 'utf8'), 'OLD CONTENT', 'the existing file is left untouched');
+  } finally {
+    await srv.close();
+  }
+});
+
+test('force overwrites an existing file fresh (no resume/append), even with unknown size', async () => {
   const dest = tmpFile();
   const full = 'ABCDEFGHIJ';
-  // A previously-complete file with no recorded size used to be re-Range'd and
-  // appended forever. With unknown size we must NOT send a Range; we overwrite.
-  fs.writeFileSync(dest, full);
+  // force=true (the reDownload pref) re-downloads. With unknown size it must NOT
+  // send a Range header (no append) — it overwrites from byte 0.
+  fs.writeFileSync(dest, 'STALE');
   let sawRange = null;
   const srv = await startServer((req, res) => {
     sawRange = req.headers.range || null;
@@ -106,10 +125,10 @@ test('downloads fresh (no resume/append) when the size is unknown', async () => 
     res.end(full);
   });
   try {
-    const r = await ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: undefined });
-    assert.equal(sawRange, null, 'no Range header should be sent when size is unknown');
-    assert.equal(fs.readFileSync(dest, 'utf8'), full, 'file should be the fresh full content, not appended');
-    assert.equal(r.bytes, full.length);
+    const r = await ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: undefined, force: true });
+    assert.equal(r.skipped, false, 'force must re-download, not skip');
+    assert.equal(sawRange, null, 'no Range header when re-downloading fresh');
+    assert.equal(fs.readFileSync(dest, 'utf8'), full, 'file is overwritten with the fresh content');
   } finally {
     await srv.close();
   }

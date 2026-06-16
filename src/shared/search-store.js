@@ -1,0 +1,81 @@
+'use strict';
+
+/**
+ * search-store.js (shared, pure)
+ *
+ * List operations for saved searches & recent-search history (#6). No storage,
+ * no DOM — the renderer persists the resulting arrays via settings, and uses
+ * these helpers to keep them tidy (de-duped, capped, most-recent-first).
+ *
+ * Loaded as CommonJS (tests/main) and as a plain <script> (window.searchStore).
+ */
+
+(function (root, factory) {
+  const api = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (root) root.searchStore = api;
+})(typeof window !== 'undefined' ? window : null, function () {
+  /**
+   * A stable signature for a search descriptor, used to de-dupe history.
+   * Basic: type + query text. Advanced: type + sorted field entries.
+   */
+  function searchSignature(search) {
+    if (!search || typeof search !== 'object') return '';
+    if (search.type === 'advanced') {
+      const fields = search.fields || {};
+      const parts = Object.keys(fields)
+        .sort()
+        .map((k) => `${k}=${JSON.stringify(fields[k])}`);
+      return `advanced|${parts.join('&')}`;
+    }
+    return `basic|${search.q == null ? '' : String(search.q)}`;
+  }
+
+  function isBlankValue(v) {
+    if (v == null) return true;
+    if (Array.isArray(v)) return v.length === 0;
+    return String(v).trim() === '';
+  }
+
+  /** Human-readable one-line label for a search descriptor (for dropdowns). */
+  function searchLabel(search) {
+    if (!search || typeof search !== 'object') return '';
+    if (search.type === 'advanced') {
+      const fields = search.fields || {};
+      const parts = Object.keys(fields)
+        .filter((k) => !isBlankValue(fields[k]))
+        .map((k) => `${k}: ${Array.isArray(fields[k]) ? fields[k].join(', ') : fields[k]}`);
+      return parts.length ? parts.join(', ') : '(all items)';
+    }
+    const q = search.q == null ? '' : String(search.q).trim();
+    return q || '(empty)';
+  }
+
+  /**
+   * Prepend `entry` to the recent list, removing any prior entry with the same
+   * signature, and cap the result to `cap` items. Non-mutating.
+   */
+  function addRecent(list, entry, cap = 20) {
+    const sig = searchSignature(entry);
+    const filtered = (list || []).filter((e) => searchSignature(e) !== sig);
+    return [entry, ...filtered].slice(0, Math.max(0, cap));
+  }
+
+  /** Add or replace a named saved search (unique by name). Non-mutating. */
+  function addSaved(list, entry) {
+    const without = (list || []).filter((e) => e.name !== entry.name);
+    return [...without, entry];
+  }
+
+  /** Remove a saved search by name. Non-mutating. */
+  function removeSaved(list, name) {
+    return (list || []).filter((e) => e.name !== name);
+  }
+
+  /** Rename a saved search; no-op if `oldName` is absent. Non-mutating. */
+  function renameSaved(list, oldName, newName) {
+    return (list || []).map((e) => (e.name === oldName ? { ...e, name: newName } : e));
+  }
+
+  return { searchSignature, searchLabel, addRecent, addSaved, removeSaved, renameSaved };
+});

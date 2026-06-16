@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src https://archive.org https://*.archive.org data:; connect-src 'none';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IA Desktop</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Login overlay -->
+    <div id="login-view" class="login-view">
+      <div class="login-card">
+        <div class="brand">
+          <div class="brand-mark">IA</div>
+          <h1>Internet Archive</h1>
+          <p class="brand-sub">Search, download, and upload — no command line.</p>
+        </div>
+        <form id="login-form" autocomplete="off">
+          <label>
+            Email
+            <input id="login-email" type="email" placeholder="you@example.com" required autocomplete="off" />
+          </label>
+          <label>
+            Password
+            <input id="login-password" type="password" placeholder="••••••••" required autocomplete="off" />
+          </label>
+          <button id="login-btn" type="submit">Sign in</button>
+          <p id="login-error" class="error" hidden></p>
+          <p class="login-hint">
+            Uses your archive.org account. Credentials are exchanged for upload keys
+            and stored encrypted on this device.
+          </p>
+        </form>
+      </div>
+    </div>
+
+    <!-- Main app -->
+    <div id="app" class="app" hidden>
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="brand-mark small">IA</div>
+          <nav class="tabs">
+            <button class="tab active" data-tab="search">Search</button>
+            <button class="tab" data-tab="favorites">Favorites</button>
+            <button class="tab" data-tab="downloads">Transfers<span id="downloads-badge" class="tab-badge" hidden></span></button>
+            <button class="tab" data-tab="upload">Upload</button>
+            <button class="tab" data-tab="prefs">Preferences</button>
+            <button class="tab" data-tab="help">Help</button>
+          </nav>
+        </div>
+        <div class="topbar-right">
+          <span id="who" class="who"></span>
+          <button id="logout-btn" class="ghost">Sign out</button>
+        </div>
+      </header>
+
+      <!-- SEARCH TAB -->
+      <section id="tab-search" class="tab-panel active">
+        <div class="search-bar">
+          <input id="search-input" type="search" placeholder="Search — try title: subject: creator: keywords" />
+          <!-- #12: always-visible year range. type=text + inputmode=numeric so
+               there's no native up/down spinner; maxlength + JS sanitize keep it
+               to a year or an optional YYYY-MM month (#11). -->
+          <input id="quick-date-from" class="year-input" type="text" inputmode="numeric"
+                 maxlength="7" autocomplete="off" placeholder="from YYYY" title="From year (or YYYY-MM for a month)" />
+          <input id="quick-date-to" class="year-input" type="text" inputmode="numeric"
+                 maxlength="7" autocomplete="off" placeholder="to YYYY" title="To year (or YYYY-MM for a month)" />
+          <select id="search-sort" title="Sort">
+            <option value="">Best match</option>
+            <option value="downloads desc">Most downloaded</option>
+            <option value="publicdate desc">Newest</option>
+            <option value="publicdate asc">Oldest</option>
+            <option value="titleSorter asc">Title A–Z</option>
+          </select>
+          <button id="adv-toggle" class="ghost" title="Advanced search">Advanced ▾</button>
+          <button id="search-btn">Search</button>
+        </div>
+
+        <!-- Saved searches & history (#6) -->
+        <div class="saved-bar">
+          <select id="recent-select" title="Recent searches">
+            <option value="">Recent searches…</option>
+          </select>
+          <select id="saved-select" title="Saved searches">
+            <option value="">Saved searches…</option>
+          </select>
+          <button id="save-search" class="ghost" title="Save the current search">★ Save</button>
+          <button id="delete-saved" class="ghost" title="Delete the selected saved search" hidden>Delete</button>
+          <span class="saved-bar-spacer"></span>
+          <!-- #15: shown only when the current search is a collection: search. -->
+          <button id="download-collection" class="ghost" title="Download every item in this collection" hidden>⤓ Download collection</button>
+        </div>
+
+        <!-- Advanced search panel -->
+        <div id="adv-panel" class="adv-panel" hidden>
+          <div class="adv-grid">
+            <label>Title<input id="adv-title" placeholder="words in the title" /></label>
+            <label>Subject<input id="adv-subject" placeholder="topic / subject" /></label>
+            <label>Creator / Author<input id="adv-creator" placeholder="author or uploader" /></label>
+            <label>
+              Language
+              <input id="adv-language" list="lang-list" placeholder="e.g. English or jpn" />
+              <datalist id="lang-list">
+                <option value="English"></option>
+                <option value="Japanese"></option>
+                <option value="Chinese"></option>
+                <option value="Korean"></option>
+                <option value="French"></option>
+                <option value="German"></option>
+                <option value="Spanish"></option>
+                <option value="Italian"></option>
+                <option value="Russian"></option>
+                <option value="Arabic"></option>
+              </datalist>
+            </label>
+            <label>Date from<input id="adv-date-from" placeholder="YYYY or YYYY-MM-DD" /></label>
+            <label>Date to<input id="adv-date-to" placeholder="YYYY or YYYY-MM-DD" /></label>
+          </div>
+          <div class="adv-types">
+            <span class="muted">Media type:</span>
+            <label class="chk"><input type="checkbox" class="adv-mt" value="texts" /> Texts</label>
+            <label class="chk"><input type="checkbox" class="adv-mt" value="audio" /> Audio</label>
+            <label class="chk"><input type="checkbox" class="adv-mt" value="movies" /> Video</label>
+            <label class="chk"><input type="checkbox" class="adv-mt" value="image" /> Images</label>
+            <label class="chk"><input type="checkbox" class="adv-mt" value="software" /> Software</label>
+            <label class="chk"><input type="checkbox" class="adv-mt" value="data" /> Data</label>
+            <label class="chk"><input type="checkbox" class="adv-mt" value="web" /> Web</label>
+          </div>
+          <div class="adv-foot">
+            <code id="adv-query-preview" class="query-preview"></code>
+            <div class="adv-actions">
+              <button id="adv-clear" class="ghost">Clear</button>
+              <button id="adv-search">Search</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Selection toolbar -->
+        <div id="select-bar" class="select-bar" hidden>
+          <label class="chk select-all-lbl"><input type="checkbox" id="select-all" /> Select all on page</label>
+          <button id="deselect-all" class="ghost deselect-all" title="Clear the entire selection (all pages)" disabled>Deselect all</button>
+          <span id="select-count" class="muted">0 selected</span>
+          <!-- #10: live filter of the current results by title -->
+          <input id="results-filter" type="search" class="results-filter" placeholder="Filter these results by title…" />
+          <div class="view-controls">
+            <!-- Compact-list sort (client-side, this page only). -->
+            <div id="list-sort" class="list-sort" hidden>
+              <label class="muted" for="sort-key">Sort:</label>
+              <select id="sort-key" title="Sort this page by">
+                <option value="">— page order —</option>
+                <option value="title">Title</option>
+                <option value="date">Date</option>
+                <option value="downloads">Downloads</option>
+                <option value="item_size">Size</option>
+                <option value="mediatype">Media type</option>
+              </select>
+              <button id="sort-dir" class="ghost" title="Toggle sort direction" data-dir="asc">↑</button>
+            </div>
+            <!-- #8: results per page -->
+            <label class="chk muted" title="Results per page">
+              Per page
+              <select id="per-page">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>
+            </label>
+            <label class="chk" title="Show subject tags under each result title">
+              <input type="checkbox" id="toggle-subjects" /> Subject tags
+            </label>
+            <div class="seg" role="group" aria-label="View mode">
+              <button id="view-grid" class="seg-btn active" title="Grid view">▦ Grid</button>
+              <button id="view-compact" class="seg-btn" title="Compact list">☰ List</button>
+            </div>
+          </div>
+          <button id="download-selected" disabled>Download selected</button>
+        </div>
+
+        <div class="results-meta-row">
+          <div id="results-meta" class="results-meta"></div>
+          <div id="active-facets" class="active-facets"></div>
+        </div>
+        <div class="results-layout">
+          <!-- Facet sidebar (#8) -->
+          <aside id="facets" class="facets" hidden></aside>
+          <div class="results-wrap">
+            <div id="results" class="results"></div>
+            <div id="pager" class="pager" hidden>
+              <button id="prev-page" class="ghost">‹ Prev</button>
+              <span id="page-label"></span>
+              <!-- #7: jump to an arbitrary page -->
+              <span class="jump-to muted">Go to
+                <input id="jump-page" type="number" min="1" class="jump-input" />
+                <button id="jump-go" class="ghost">Go</button>
+              </span>
+              <button id="next-page" class="ghost">Next ›</button>
+            </div>
+            <div id="search-empty" class="empty">Search archive.org to get started.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FAVORITES TAB (#13) -->
+      <section id="tab-favorites" class="tab-panel">
+        <div class="panel-head">
+          <h2>Favorites</h2>
+          <span class="muted" id="fav-count"></span>
+        </div>
+        <div id="favorites-list" class="results"></div>
+        <div id="favorites-empty" class="empty">No favorites yet. Star an item from search or its detail view.</div>
+      </section>
+
+      <!-- TRANSFERS TAB (downloads + uploads) -->
+      <section id="tab-downloads" class="tab-panel">
+        <div class="panel-head">
+          <h2>Transfers</h2>
+          <div class="dest-row">
+            <span class="muted">Saving downloads to:</span>
+            <code id="dest-path">—</code>
+            <button id="choose-dest" class="ghost">Change…</button>
+            <!-- #7: clear finished (completed / failed) transfer cards. -->
+            <button id="clear-transfers" class="ghost" title="Remove finished transfers from the list">Clear finished</button>
+          </div>
+        </div>
+        <p class="muted small">Transfers run one at a time — archive.org throttles parallel transfers, so a download and an upload never overlap.</p>
+
+        <h3 class="prefs-h transfer-h"><span class="dir-mark down">↓</span> Downloads</h3>
+        <div id="downloads-list" class="jobs"></div>
+        <div id="downloads-empty" class="empty">No downloads yet. Find an item and click Download.</div>
+
+        <h3 class="prefs-h transfer-h"><span class="dir-mark up">↑</span> Uploads</h3>
+        <div id="uploads-list" class="jobs"></div>
+        <div id="uploads-empty" class="empty">No uploads yet. Create one from the Upload tab.</div>
+      </section>
+
+      <!-- UPLOAD TAB -->
+      <section id="tab-upload" class="tab-panel">
+        <div class="panel-head"><h2>Upload to a new item</h2></div>
+
+        <!-- Metadata templates (#15) -->
+        <div class="template-bar">
+          <select id="tmpl-select" title="Apply a saved metadata template">
+            <option value="">Metadata template…</option>
+          </select>
+          <button type="button" id="tmpl-save" class="ghost" title="Save the current metadata as a template">Save as template</button>
+          <button type="button" id="tmpl-delete" class="ghost" title="Delete the selected template" hidden>Delete</button>
+        </div>
+
+        <form id="upload-form" class="upload-form">
+          <label>
+            Identifier <span class="muted">(unique, lowercase, no spaces)</span>
+            <input id="up-identifier" placeholder="my-unique-item-id" required />
+          </label>
+          <label>
+            Title
+            <input id="up-title" placeholder="A human-friendly title" required />
+          </label>
+          <div class="two-col">
+            <label>
+              Creator
+              <input id="up-creator" placeholder="Author / uploader" />
+            </label>
+            <label>
+              Date
+              <input id="up-date" placeholder="YYYY-MM-DD" />
+            </label>
+          </div>
+          <div class="two-col">
+            <label>
+              Media type
+              <select id="up-mediatype">
+                <option value="texts">texts</option>
+                <option value="movies">movies (video)</option>
+                <option value="audio">audio</option>
+                <option value="image">image</option>
+                <option value="data">data</option>
+                <option value="web">web</option>
+              </select>
+            </label>
+            <label>
+              Language
+              <!-- Options are populated from uiUtil.UPLOAD_LANGUAGES at runtime. -->
+              <select id="up-language">
+                <option value="">— none —</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            Description
+            <textarea id="up-description" rows="3" placeholder="Optional description"></textarea>
+          </label>
+          <label>
+            Subjects <span class="muted">(comma-separated)</span>
+            <input id="up-subjects" placeholder="history, music, 1977" />
+          </label>
+          <label class="checkbox">
+            <input id="up-derive" type="checkbox" checked />
+            Run derive (generate viewers / thumbnails after upload)
+          </label>
+
+          <!-- BookReader hints (texts). page-progression=rl + bookreader-defaults=mode/1up -->
+          <fieldset class="reader-opts">
+            <legend>Book reader options <span class="muted small">(for scanned texts)</span></legend>
+            <label class="checkbox">
+              <input id="up-rtl" type="checkbox" />
+              Right-to-left page progression <span class="muted small">— for Japanese, Chinese, Arabic, Hebrew… (page-progression: rl)</span>
+            </label>
+            <label class="checkbox">
+              <input id="up-1up" type="checkbox" />
+              Default to single-page view <span class="muted small">— show one page at a time (bookreader-defaults: mode/1up)</span>
+            </label>
+          </fieldset>
+
+          <div class="files-box" id="up-drop-zone">
+            <button type="button" id="up-choose-files" class="ghost">Choose files…</button>
+            <span class="muted small drop-hint"> or drag &amp; drop files here</span>
+            <div id="up-file-list" class="file-list"></div>
+          </div>
+
+          <div class="upload-actions">
+            <button id="up-submit" type="submit" disabled>Upload</button>
+            <button id="up-clear" type="button" class="ghost" title="Clear every field on this form">Clear All</button>
+          </div>
+          <p id="upload-status" class="status" hidden></p>
+        </form>
+
+        <!-- Bulk / spreadsheet upload (#14) -->
+        <div class="bulk-upload">
+          <h3 class="prefs-h">Bulk upload from a spreadsheet</h3>
+          <p class="muted small">
+            CSV with an <code>identifier</code> and <code>file</code> column (paths relative to the CSV),
+            plus any metadata columns (title, creator, mediatype, subject…). Multiple rows with the same
+            identifier add several files to one item.
+          </p>
+          <div class="bulk-row">
+            <button type="button" id="bulk-choose" class="ghost">Choose CSV…</button>
+            <code id="bulk-path" class="muted">No file chosen</code>
+          </div>
+          <div id="bulk-summary" class="bulk-summary" hidden></div>
+          <button type="button" id="bulk-start" class="ghost" hidden>Upload all items</button>
+        </div>
+      </section>
+
+      <!-- PREFERENCES TAB -->
+      <section id="tab-prefs" class="tab-panel">
+        <div class="panel-head"><h2>Preferences</h2></div>
+        <div class="prefs-form">
+          <h3 class="prefs-h">Download location</h3>
+          <div class="dest-row">
+            <span class="muted">Saving to:</span>
+            <code id="pref-dest-path">—</code>
+            <button id="pref-choose-dest" class="ghost">Change…</button>
+          </div>
+
+          <h3 class="prefs-h">Which files to download</h3>
+          <label>
+            File format
+            <select id="pref-format"></select>
+          </label>
+          <p class="muted small">
+            Scanned texts have two PDFs: the plain image scan and a larger
+            searchable version with an OCR text layer. <strong>“PDF only”</strong>
+            grabs just the image scan (no text layer);
+            <strong>“Searchable text PDF”</strong> grabs only the OCR’d one.
+          </p>
+
+          <label>
+            Only download files matching <span class="muted">(glob, comma/line-separated — optional)</span>
+            <input id="pref-include" placeholder="e.g. *.pdf, chapter_*.txt" />
+          </label>
+          <label>
+            Skip files matching <span class="muted">(glob, comma/line-separated — optional)</span>
+            <input id="pref-exclude" placeholder="e.g. *_bw.pdf" />
+          </label>
+          <p class="muted small">
+            Globs: <code>*</code> any, <code>?</code> one char, <code>[0-9]</code> a class.
+            Applied on top of the format filter above.
+          </p>
+
+          <p class="muted small">Files download one at a time (archive.org throttles parallel transfers); failed transfers retry automatically.</p>
+
+          <label class="checkbox">
+            <input id="pref-subfolders" type="checkbox" />
+            Put each item in its own subfolder
+          </label>
+          <p class="muted small">When off (the default), files go straight into the download folder. Turn on to keep each item's files in a folder named after the item.</p>
+
+          <label>
+            Wait between items <span class="muted">(seconds, 0–99)</span>
+            <input id="pref-download-delay" type="number" min="0" max="99" step="1" inputmode="numeric" />
+          </label>
+          <p class="muted small">A pause between consecutive item downloads to be gentle on archive.org. Default is 5 seconds.</p>
+
+          <h3 class="prefs-h">Filename</h3>
+          <label>
+            Use the item title in the filename
+            <select id="pref-rename">
+              <option value="off">Keep original filename</option>
+              <option value="replace">Replace filename with item title</option>
+              <option value="append">Append item title to filename</option>
+            </select>
+          </label>
+          <p class="muted small">Illegal characters (\\ / : * ? " &lt; &gt; |) are removed automatically.</p>
+          <p class="muted small">Example: <code id="pref-example"></code></p>
+
+          <h3 class="prefs-h">Appearance</h3>
+          <label>
+            Theme
+            <select id="pref-theme">
+              <option value="system">System (auto)</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+
+          <h3 class="prefs-h">Display</h3>
+          <label>
+            Results view
+            <select id="pref-view">
+              <option value="grid">Grid (with previews)</option>
+              <option value="compact">Compact list (no previews)</option>
+            </select>
+          </label>
+          <label>
+            Density / element size
+            <select id="pref-density">
+              <option value="comfortable">Comfortable (larger)</option>
+              <option value="cozy">Cozy (default)</option>
+              <option value="compact">Compact (denser)</option>
+            </select>
+          </label>
+          <label class="checkbox">
+            <input id="pref-subjects" type="checkbox" />
+            Show subject tags on results
+          </label>
+          <label class="checkbox">
+            <input id="pref-creator" type="checkbox" />
+            Show creator on results
+          </label>
+          <label class="checkbox">
+            <input id="pref-type" type="checkbox" />
+            Show media type on results
+          </label>
+
+          <h3 class="prefs-h">Saved searches</h3>
+          <p class="muted small">Clear your recent-search history or your named saved searches.</p>
+          <div class="btn-row">
+            <button type="button" id="clear-recent-searches" class="ghost">Clear search cache</button>
+            <button type="button" id="clear-saved-searches" class="ghost">Clear saved</button>
+          </div>
+
+          <h3 class="prefs-h">Uploads</h3>
+          <label class="checkbox">
+            <input id="pref-preserve-upload-meta" type="checkbox" />
+            Keep metadata between uploads
+          </label>
+          <p class="muted small">
+            When on, your creator / date / media type / description / subjects carry
+            over to the next upload after one starts (the file, title, and identifier
+            always reset). Turn off to start each upload from a blank form.
+          </p>
+
+          <h3 class="prefs-h">Logs &amp; diagnostics</h3>
+          <label class="checkbox">
+            <input id="pref-logging" type="checkbox" />
+            Enable logging &amp; diagnostics
+          </label>
+          <p class="muted small">Off by default. When on, the app writes a timestamped log of downloads, uploads, and errors that you can share when reporting a problem.</p>
+          <button type="button" id="open-logs" class="ghost">Open logs folder</button>
+
+          <p id="prefs-saved" class="status" hidden>Saved ✓</p>
+        </div>
+      </section>
+
+      <!-- HELP TAB -->
+      <section id="tab-help" class="tab-panel">
+        <div class="panel-head"><h2>Help &amp; features</h2></div>
+        <div class="help-body">
+          <p class="muted">
+            IA Desktop is a friendly front-end for the Internet Archive — search,
+            browse, download, and upload without the command line. Here's a tour.
+          </p>
+
+          <h3 class="prefs-h">Searching</h3>
+          <p>Type anything in the search box and press Enter. A few ways to narrow things down:</p>
+          <ul class="help-list">
+            <li>
+              <strong>Field keywords</strong> — prefix a word with a field name and a colon to
+              search just that field. Combine as many as you like:
+              <ul class="help-sub">
+                <li><code>title:</code> — words in the title, e.g. <code>title:housewife</code></li>
+                <li><code>subject:</code> — topic/subject tag, e.g. <code>subject:"world war"</code></li>
+                <li><code>creator:</code> — author or uploader, e.g. <code>creator:tolkien</code></li>
+                <li><code>language:</code> — e.g. <code>language:japanese</code></li>
+                <li><code>mediatype:</code> — <code>texts</code>, <code>audio</code>, <code>movies</code>, <code>image</code>, <code>software</code>, <code>data</code>, <code>web</code></li>
+                <li><code>date:</code>, <code>collection:</code>, <code>identifier:</code></li>
+              </ul>
+              Use quotes for multi-word values: <code>subject:"silent film"</code>. Words with no
+              keyword are searched everywhere.
+            </li>
+            <li><strong>Year range</strong> — the <em>from YYYY</em> / <em>to YYYY</em> boxes next to the
+              search field limit results to that publication-date range. You can also narrow to a
+              <strong>month</strong> by typing <code>YYYY-MM</code> (or <code>YYYY-M</code>) — e.g.
+              <code>1940-09</code> for September 1940. A bare year covers the whole year; a month
+              covers that whole month (from is rounded down to the 1st, to up to the last day).</li>
+            <li><strong>Sort</strong> — the dropdown re-orders by best match, downloads, or date.</li>
+            <li><strong>Advanced</strong> — the <em>Advanced ▾</em> button opens a form with separate
+              title/subject/creator/language/date fields and media-type checkboxes, and shows the exact
+              query it builds.</li>
+          </ul>
+
+          <h3 class="prefs-h">Filtering &amp; browsing results</h3>
+          <ul class="help-list">
+            <li><strong>Facets</strong> — the left sidebar lets you click a media type, year, subject,
+              language, or collection to filter the current results. Subjects show the top 30 with a
+              <em>More…</em> button.</li>
+            <li><strong>Filter box</strong> — the “Filter these results by title…” box narrows the items
+              already on screen as you type (no new search).</li>
+            <li><strong>Grid / List</strong> — toggle between preview cards and a compact list. In
+              Preferences you can also set the density (Comfortable / Cozy / Compact).</li>
+            <li><strong>Subject tags</strong> — turn on “Subject tags” to show topic chips under each title.</li>
+            <li><strong>Per page &amp; paging</strong> — show 50, 100, or 200 results per page, step with
+              Prev/Next, or type a page number and hit <em>Go</em>.</li>
+          </ul>
+
+          <h3 class="prefs-h">Selecting &amp; downloading</h3>
+          <ul class="help-list">
+            <li>Tick the checkbox on any result to select it. <strong>Shift-click</strong> a second
+              checkbox to select the whole range between them.</li>
+            <li><strong>Select all on page</strong> ticks everything visible; <strong>Deselect all</strong>
+              clears your entire selection. Selections are <em>kept as you page</em>, so you can gather
+              items across several pages before downloading.</li>
+            <li><strong>Download selected</strong> downloads every selected item. A single item's
+              <em>Download</em> button grabs just that one.</li>
+            <li>Which files you get, the filename format, and the download folder are all set in
+              <strong>Preferences</strong>. Files download one at a time and failed transfers retry
+              automatically.</li>
+          </ul>
+
+          <h3 class="prefs-h">Working with results</h3>
+          <ul class="help-list">
+            <li><strong>Click a creator</strong> under a title to search for more by that creator;
+              <strong>click a subject tag</strong> to search that subject — both run a new search inside
+              the app.</li>
+            <li><strong>Right-click a result</strong> for <em>Copy Title</em> and <em>Copy Creator</em>.</li>
+            <li><strong>Hover a title</strong> to see the full title as a tooltip when it's truncated.</li>
+            <li>In an item's <strong>Details</strong>, <em>More by…</em> and the <em>Collection:</em> buttons
+              run those searches in the app rather than opening the website.</li>
+          </ul>
+
+          <h3 class="prefs-h">Favorites, uploads &amp; more</h3>
+          <ul class="help-list">
+            <li><strong>★ Favorite</strong> — the star on a card (or in its detail view) saves an item to
+              the <em>Favorites</em> tab.</li>
+            <li><strong>Details</strong> — opens an item's full metadata, file list, and (for collections)
+              its member items. <em>Edit metadata</em> and <em>Tasks</em> appear only on items you uploaded.</li>
+            <li><strong>Logs</strong> — Preferences → turn on <em>logging &amp; diagnostics</em> (off by
+              default), then <em>Open logs folder</em> reveals a timestamped log of downloads, uploads,
+              and errors.</li>
+          </ul>
+
+          <h3 class="prefs-h">Uploading from a spreadsheet (CSV)</h3>
+          <p>To create many items at once, prepare a CSV and use <strong>Upload → Bulk upload from a
+            spreadsheet</strong>. Each row becomes one new archive.org item.</p>
+          <ul class="help-list">
+            <li><strong>Required columns:</strong> <code>identifier</code> (the unique item id —
+              lowercase, no spaces) and <code>file</code> (the file to upload, relative to the CSV's own
+              folder). To attach several files to one item, repeat the <code>file</code> column
+              (<code>file</code>, <code>file2</code>, <code>file3</code>…) or list the files on extra rows
+              that share the same <code>identifier</code>.</li>
+            <li><strong>Metadata columns:</strong> add a column per metadata field —
+              <code>title</code>, <code>creator</code>, <code>date</code>, <code>subject</code>,
+              <code>description</code>, <code>language</code>, <code>collection</code>, <code>mediatype</code>,
+              etc. Each column header is the field name; the cell is its value. Separate multiple
+              subjects with semicolons.</li>
+            <li><strong>Paths:</strong> file paths are resolved relative to the folder the CSV is in, so
+              keep the spreadsheet next to your files (or use absolute paths).</li>
+            <li>Pick the CSV in the Upload tab to see a parsed preview (with any missing files flagged)
+              before anything is uploaded. Items upload one at a time.</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <!-- Item detail modal -->
+    <div id="item-modal" class="modal" hidden>
+      <div class="modal-card">
+        <button id="item-close" class="modal-close" title="Close">×</button>
+        <div id="item-body" class="item-body"></div>
+      </div>
+    </div>
+
+    <!-- Generic text-input prompt (Electron disables window.prompt) -->
+    <div id="prompt-modal" class="modal" hidden>
+      <div class="modal-card prompt-card">
+        <p id="prompt-label" class="prompt-label"></p>
+        <input id="prompt-input" type="text" />
+        <div class="prompt-actions">
+          <button id="prompt-cancel" class="ghost">Cancel</button>
+          <button id="prompt-ok">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <!-- Dev-only self-test driver (no-op unless URL has #selftest). Must load
+         FIRST so it can install the fake window.ia before renderer.js runs. -->
+    <script src="selftest.js"></script>
+    <script src="ui-util.js"></script>
+    <script src="../shared/view-prefs.js"></script>
+    <script src="../shared/pager.js"></script>
+    <script src="../shared/sort-docs.js"></script>
+    <script src="../shared/search-store.js"></script>
+    <script src="../shared/facets.js"></script>
+    <script src="../shared/item-view.js"></script>
+    <script src="../shared/favorites.js"></script>
+    <script src="../shared/upload-templates.js"></script>
+    <script src="../shared/selection.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>

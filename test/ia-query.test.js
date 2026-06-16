@@ -1,0 +1,145 @@
+'use strict';
+
+/**
+ * Red/green TDD for the advanced query builder. Composes an archive.org
+ * (Lucene-style) query string from structured UI inputs.
+ */
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+
+const { buildAdvancedQuery, escapeFieldValue } = require('../src/main/ia-query');
+
+/* ----------------------------- escaping ----------------------------------- */
+
+test('escapeFieldValue quotes multi-word values', () => {
+  assert.equal(escapeFieldValue('market street'), '"market street"');
+});
+
+test('escapeFieldValue leaves single tokens unquoted', () => {
+  assert.equal(escapeFieldValue('cats'), 'cats');
+});
+
+test('escapeFieldValue escapes embedded double quotes', () => {
+  assert.equal(escapeFieldValue('say "hi"'), '"say \\"hi\\""');
+});
+
+/* --------------------------- field combinations --------------------------- */
+
+test('combines title and subject with AND', () => {
+  const q = buildAdvancedQuery({ title: 'kokoro', subject: 'literature' });
+  assert.equal(q, 'title:(kokoro) AND subject:(literature)');
+});
+
+test('quotes multi-word field values', () => {
+  const q = buildAdvancedQuery({ title: 'market street' });
+  assert.equal(q, 'title:("market street")');
+});
+
+test('mediatype filter is added as its own clause', () => {
+  const q = buildAdvancedQuery({ subject: 'jazz', mediatype: 'audio' });
+  assert.equal(q, 'subject:(jazz) AND mediatype:(audio)');
+});
+
+test('language filter is added', () => {
+  const q = buildAdvancedQuery({ title: 'genji', language: 'jpn' });
+  assert.equal(q, 'title:(genji) AND language:(jpn)');
+});
+
+test('creator filter is added', () => {
+  const q = buildAdvancedQuery({ creator: 'natsume soseki' });
+  assert.equal(q, 'creator:("natsume soseki")');
+});
+
+/* ------------------------------ date range -------------------------------- */
+
+test('date range builds a Lucene range clause', () => {
+  const q = buildAdvancedQuery({ subject: 'war', dateFrom: '1939-01-01', dateTo: '1945-12-31' });
+  assert.equal(q, 'subject:(war) AND date:[1939-01-01 TO 1945-12-31]');
+});
+
+test('open-ended date-from uses wildcard upper bound', () => {
+  const q = buildAdvancedQuery({ dateFrom: '2000-01-01' });
+  assert.equal(q, 'date:[2000-01-01 TO *]');
+});
+
+test('open-ended date-to uses wildcard lower bound', () => {
+  const q = buildAdvancedQuery({ dateTo: '2000-12-31' });
+  assert.equal(q, 'date:[* TO 2000-12-31]');
+});
+
+/* --------------- month-precision year inputs (#11) ------------------------ */
+// A bare YYYY expands to the whole year; YYYY-MM / YYYY-M expand to that whole
+// month. `from` snaps to the start of the period, `to` to the end.
+
+test('a bare YYYY expands to the whole year on each bound (#11)', () => {
+  const q = buildAdvancedQuery({ dateFrom: '1940', dateTo: '1945' });
+  assert.equal(q, 'date:[1940-01-01 TO 1945-12-31]');
+});
+
+test('YYYY-MM month input expands to the whole month (#11)', () => {
+  const q = buildAdvancedQuery({ dateFrom: '1940-09', dateTo: '1941-02' });
+  // Sept has 30 days; Feb 1941 (non-leap) has 28.
+  assert.equal(q, 'date:[1940-09-01 TO 1941-02-28]');
+});
+
+test('single-digit month YYYY-M is accepted and zero-padded (#11)', () => {
+  const q = buildAdvancedQuery({ dateFrom: '1940-9', dateTo: '1940-9' });
+  assert.equal(q, 'date:[1940-09-01 TO 1940-09-30]');
+});
+
+test('February in a leap year expands to the 29th (#11)', () => {
+  const q = buildAdvancedQuery({ dateTo: '1944-02' });
+  assert.equal(q, 'date:[* TO 1944-02-29]');
+});
+
+test('a full ISO date passes through unchanged (#11 idempotent)', () => {
+  const q = buildAdvancedQuery({ dateFrom: '1939-03-15', dateTo: '1945-08-06' });
+  assert.equal(q, 'date:[1939-03-15 TO 1945-08-06]');
+});
+
+/* ----------------------------- free text ---------------------------------- */
+
+test('free text is included as a bare clause', () => {
+  const q = buildAdvancedQuery({ text: 'grateful dead', mediatype: 'audio' });
+  assert.equal(q, '(grateful dead) AND mediatype:(audio)');
+});
+
+test('empty input yields a match-all query', () => {
+  assert.equal(buildAdvancedQuery({}), '*:*');
+});
+
+test('whitespace-only fields are ignored', () => {
+  const q = buildAdvancedQuery({ title: '  ', subject: 'poetry' });
+  assert.equal(q, 'subject:(poetry)');
+});
+
+test('supports OR across multiple mediatypes', () => {
+  const q = buildAdvancedQuery({ subject: 'history', mediatype: ['texts', 'audio'] });
+  assert.equal(q, 'subject:(history) AND mediatype:(texts OR audio)');
+});
+
+/* --------------- free-text unbalanced parens (L6 robustness) --------------- */
+
+test('free text with an unbalanced opening paren does not break the query', () => {
+  // "foo (bar" wrapped as "(foo (bar)" would have unbalanced parens — invalid.
+  const q = buildAdvancedQuery({ text: 'foo (bar' });
+  const opens = (q.match(/\(/g) || []).length;
+  const closes = (q.match(/\)/g) || []).length;
+  assert.equal(opens, closes, `parens must be balanced, got: ${q}`);
+});
+
+test('free text with an unbalanced closing paren does not break the query', () => {
+  const q = buildAdvancedQuery({ text: 'foo) bar' });
+  const opens = (q.match(/\(/g) || []).length;
+  const closes = (q.match(/\)/g) || []).length;
+  assert.equal(opens, closes, `parens must be balanced, got: ${q}`);
+});
+
+test('balanced free-text parens are preserved', () => {
+  const q = buildAdvancedQuery({ text: '(a OR b) c' });
+  const opens = (q.match(/\(/g) || []).length;
+  const closes = (q.match(/\)/g) || []).length;
+  assert.equal(opens, closes);
+  assert.match(q, /a OR b/);
+});

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/icon-1024.png
+*.log
+.DS_Store
+.env
+coverage/
+screenshots/
+.git-backup-old-history/

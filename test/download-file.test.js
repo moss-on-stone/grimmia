@@ -1,0 +1,155 @@
+'use strict';
+
+/**
+ * Red/green TDD for H1: downloadFile resume/integrity (T1).
+ *
+ * Driven entirely over a loopback http server — no archive.org traffic.
+ *
+ * Covers:
+ *  - skip when a complete file already exists (size known)
+ *  - resume a partial file via a valid 206 Content-Range
+ *  - a 206 whose Content-Range does NOT start at startByte is rejected/restarted
+ *    rather than blindly appended (corruption guard)
+ *  - a file with NO known size is downloaded fresh ('w'), not resumed/appended
+ *  - a short body (received < known total) is rejected, not resolved "ok"
+ */
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const ia = require('../src/main/ia-client');
+const { startServer } = require('./helpers/loopback-server');
+
+function tmpFile() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ia-dl-'));
+  return path.join(dir, 'out.bin');
+}
+
+test('skips download when the file already exists at the expected size', async () => {
+  const dest = tmpFile();
+  fs.writeFileSync(dest, 'HELLO'); // 5 bytes
+  let served = false;
+  const srv = await startServer((_req, res) => {
+    served = true;
+    res.end('HELLO');
+  });
+  try {
+    const r = await ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: 5 });
+    assert.equal(r.skipped, true);
+    assert.equal(served, false, 'server must not be hit when the file is already complete');
+  } finally {
+    await srv.close();
+  }
+});
+
+test('resumes a partial download via a valid 206 and ends with the full file', async () => {
+  const dest = tmpFile();
+  const full = 'ABCDEFGHIJ'; // 10 bytes
+  fs.writeFileSync(dest, full.slice(0, 4)); // "ABCD" already present
+  const srv = await startServer((req, res) => {
+    const range = req.headers.range; // expect "bytes=4-"
+    assert.ok(range, 'client should send a Range header to resume');
+    const start = Number(range.replace('bytes=', '').split('-')[0]);
+    const slice = full.slice(start);
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${full.length - 1}/${full.length}`,
+      'Content-Length': String(slice.length),
+    });
+    res.end(slice);
+  });
+  try {
+    const r = await ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: 10 });
+    assert.equal(r.skipped, false);
+    assert.equal(fs.readFileSync(dest, 'utf8'), full, 'resumed file should equal the full content');
+  } finally {
+    await srv.close();
+  }
+});
+
+test('rejects/restarts when a 206 Content-Range does not start at the requested byte', async () => {
+  const dest = tmpFile();
+  const full = 'ABCDEFGHIJ';
+  fs.writeFileSync(dest, full.slice(0, 4)); // "ABCD", will request bytes=4-
+  // Misbehaving server: ignores the Range and returns bytes from 0 with a 206
+  // Content-Range claiming 0-. Blindly appending would corrupt ("ABCD"+full).
+  const srv = await startServer((_req, res) => {
+    res.writeHead(206, {
+      'Content-Range': `bytes 0-${full.length - 1}/${full.length}`,
+      'Content-Length': String(full.length),
+    });
+    res.end(full);
+  });
+  try {
+    const r = await ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: 10 });
+    // Either way, the resulting file must be the correct full content, never the
+    // corrupted "ABCD" + full concatenation.
+    assert.equal(r.skipped, false);
+    assert.equal(fs.readFileSync(dest, 'utf8'), full, 'must not blindly append a mismatched range');
+  } finally {
+    await srv.close();
+  }
+});
+
+test('downloads fresh (no resume/append) when the size is unknown', async () => {
+  const dest = tmpFile();
+  const full = 'ABCDEFGHIJ';
+  // A previously-complete file with no recorded size used to be re-Range'd and
+  // appended forever. With unknown size we must NOT send a Range; we overwrite.
+  fs.writeFileSync(dest, full);
+  let sawRange = null;
+  const srv = await startServer((req, res) => {
+    sawRange = req.headers.range || null;
+    res.writeHead(200, { 'Content-Length': String(full.length) });
+    res.end(full);
+  });
+  try {
+    const r = await ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: undefined });
+    assert.equal(sawRange, null, 'no Range header should be sent when size is unknown');
+    assert.equal(fs.readFileSync(dest, 'utf8'), full, 'file should be the fresh full content, not appended');
+    assert.equal(r.bytes, full.length);
+  } finally {
+    await srv.close();
+  }
+});
+
+test('rejects when the connection drops mid-stream (short of the known size)', async () => {
+  const dest = tmpFile();
+  // Server promises 10 bytes, writes 4, then destroys the socket — exactly what
+  // a dropped connection looks like. This must NOT resolve "successfully" with a
+  // truncated 4-byte file.
+  const srv = await startServer((_req, res) => {
+    res.writeHead(200, { 'Content-Length': '10' });
+    res.write('ABCD');
+    res.socket.destroy(); // drop the connection mid-body
+  });
+  try {
+    await assert.rejects(
+      ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: 10 }),
+      /incomplete|dropped|closed|connection|bytes|hang up|socket|reset/i
+    );
+  } finally {
+    await srv.close();
+  }
+});
+
+test('rejects a cleanly-ended body that is shorter than the known size (finish check)', async () => {
+  const dest = tmpFile();
+  // Chunked (no Content-Length): the stream ends cleanly after 4 bytes, so no
+  // socket error fires — only the on-finish size check (received !== known)
+  // can catch this truncation.
+  const srv = await startServer((_req, res) => {
+    res.writeHead(200); // chunked transfer-encoding, no Content-Length
+    res.end('ABCD'); // clean end, but only 4 of the expected 10 bytes
+  });
+  try {
+    await assert.rejects(
+      ia.downloadFile({ url: `${srv.url}/file`, destPath: dest, expectedSize: 10 }),
+      /incomplete|of 10 bytes/i
+    );
+  } finally {
+    await srv.close();
+  }
+});

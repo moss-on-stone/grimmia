@@ -10,9 +10,9 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "test": "node --test \"test/**/*.test.js\"",
-    "test:watch": "node --test --watch \"test/**/*.test.js\"",
-    "test:coverage": "node --test --experimental-test-coverage \"test/**/*.test.js\"",
+    "test": "node --test",
+    "test:watch": "node --test --watch",
+    "test:coverage": "node --test --experimental-test-coverage",
     "selftest": "scripts/selftest.sh",
     "screenshot": "scripts/screenshot.sh",
     "dist": "electron-builder",

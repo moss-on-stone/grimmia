@@ -93,7 +93,7 @@ test('loadSettings returns {} for a corrupt settings file', () => {
  * when safeStorage is unavailable (the no-Electron test path), credentials must
  * be written with owner-only permissions (M7) — not world-readable defaults.
  */
-test('plaintext credential fallback file is written with 0600 permissions (M7)', () => {
+test('plaintext credential fallback file is written with 0600 permissions (M7)', { skip: process.platform === 'win32' ? 'POSIX mode bits not supported on Windows (NTFS uses ACLs)' : false }, () => {
   const { store, home, cleanup } = freshStore();
   try {
     store.saveCredentials({ access: 'A', secret: 'S' });

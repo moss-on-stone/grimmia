@@ -142,9 +142,8 @@
 
         <!-- Selection toolbar -->
         <div id="select-bar" class="select-bar" hidden>
-          <label class="chk select-all-lbl"><input type="checkbox" id="select-all" /> Select all on page</label>
+          <label class="chk select-all-lbl"><input type="checkbox" id="select-all" /> Select All</label>
           <button id="deselect-all" class="ghost deselect-all" title="Clear the entire selection (all pages)" disabled>Deselect all</button>
-          <span id="select-count" class="muted">0 selected</span>
           <!-- #10: live filter of the current results by title -->
           <input id="results-filter" type="search" class="results-filter" placeholder="Filter these results by title…" />
           <div class="view-controls">
@@ -171,18 +170,21 @@
               </select>
             </label>
             <label class="chk" title="Show subject tags under each result title">
-              <input type="checkbox" id="toggle-subjects" /> Subject tags
+              <input type="checkbox" id="toggle-subjects" /> Subjects
             </label>
             <div class="seg" role="group" aria-label="View mode">
-              <button id="view-grid" class="seg-btn active" title="Grid view">▦ Grid</button>
-              <button id="view-compact" class="seg-btn" title="Compact list">☰ List</button>
+              <button id="view-grid" class="seg-btn active" title="Grid view">Grid</button>
+              <button id="view-compact" class="seg-btn" title="Compact list">List</button>
             </div>
           </div>
           <button id="download-selected" disabled>Download selected</button>
         </div>
 
         <div class="results-meta-row">
-          <div id="results-meta" class="results-meta"></div>
+          <div class="results-meta-stack">
+            <div id="results-meta" class="results-meta"></div>
+            <div id="select-count" class="select-count" hidden></div>
+          </div>
           <div id="active-facets" class="active-facets"></div>
         </div>
         <div class="results-layout">

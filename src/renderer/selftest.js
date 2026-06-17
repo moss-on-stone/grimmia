@@ -141,12 +141,14 @@
         await waitFor(() => document.querySelectorAll('#results .card').length === 1, 4000);
         check('clicking a facet narrows results to audio (1)', document.querySelectorAll('#results .card').length === 1);
         check('an active-facet chip is shown', document.querySelectorAll('#active-facets .chip').length >= 1);
-        // Remove the mediatype filter via its chip → back to all docs.
+        // Remove the mediatype filter via the chip's × → back to all docs.
+        // (Clicking the chip BODY now searches just that term, not removes it.)
         const chips = [...document.querySelectorAll('#active-facets .chip')];
         const mtChip = chips.find((c) => /mediatype/.test(c.textContent));
-        if (mtChip) mtChip.click();
+        const mtX = mtChip && mtChip.querySelector('.chip-x');
+        if (mtX) mtX.click();
         await waitFor(() => document.querySelectorAll('#results .card').length === DOCS.length, 4000);
-        check('removing the mediatype chip restores all results', document.querySelectorAll('#results .card').length === DOCS.length);
+        check('removing the mediatype chip via × restores all results', document.querySelectorAll('#results .card').length === DOCS.length);
       }
 
       // Favorite the first result, then check the Favorites tab.

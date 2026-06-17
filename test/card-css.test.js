@@ -246,6 +246,18 @@ test('#16 Preferences has an inter-download delay number input', () => {
   assert.match(html, /id="pref-download-delay"/, 'expected a #pref-download-delay input');
 });
 
+test('active-filter chips: body searches just that term, only the × removes it', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'renderer.js'), 'utf8');
+  // Body click → search a single term; × click → remove just that value.
+  assert.match(src, /class:\s*'chip-body'[\s\S]*?runSingleTermSearch/, 'chip body runs a single-term search');
+  assert.match(src, /class:\s*'chip-x'[\s\S]*?removeActiveValue/, 'chip × removes just that value');
+  // The × must stopPropagation so clicking it doesn't also trigger the body.
+  assert.match(src, /chip-x[\s\S]*?stopPropagation/, '× click must not bubble to the body');
+  // The chip styling exists.
+  assert.match(css, /\.chip-body\s*\{/, 'expected a .chip-body style');
+  assert.match(css, /\.chip-x\s*\{/, 'expected a .chip-x style');
+});
+
 test('Search tab has a Back button left of the search box, wired up', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
   // The back button must come BEFORE the search input in the search bar.

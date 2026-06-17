@@ -114,6 +114,16 @@ function buildAdvancedQuery(f = {}) {
   // NOTE: `collection` and `identifier` MUST be here — omitting collection made a
   // "Collection:" search collapse to *:* and return the entire archive (~123M).
   for (const field of ['title', 'subject', 'creator', 'language', 'collection', 'identifier']) {
+    if (field === 'subject') {
+      // Subjects ACCUMULATE with AND — each chosen subject is its own clause so
+      // items must match ALL of them (faceted narrowing), NOT a single OR clause.
+      const subjects = f.subject == null ? [] : Array.isArray(f.subject) ? f.subject : [f.subject];
+      for (const s of subjects) {
+        const c = fieldClause('subject', s);
+        if (c) clauses.push(c);
+      }
+      continue;
+    }
     const c = fieldClause(field, f[field]);
     if (c) clauses.push(c);
   }

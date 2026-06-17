@@ -68,6 +68,28 @@ test('collection combines with other fields', () => {
   assert.equal(q, 'collection:(prelinger) AND mediatype:(movies)');
 });
 
+test('multiple subjects are AND-joined (items must have ALL of them)', () => {
+  // Subject facets accumulate to narrow results — each subject is its own clause
+  // joined with AND, NOT a single OR clause.
+  const q = buildAdvancedQuery({ subject: ['China', 'Newspapers'] });
+  assert.equal(q, 'subject:(China) AND subject:(Newspapers)');
+});
+
+test('a multi-word subject in a multi-subject AND is still quoted', () => {
+  const q = buildAdvancedQuery({ subject: ['world war', 'aviation'] });
+  assert.equal(q, 'subject:("world war") AND subject:(aviation)');
+});
+
+test('a single subject (array of one) is a plain clause', () => {
+  assert.equal(buildAdvancedQuery({ subject: ['China'] }), 'subject:(China)');
+});
+
+test('mediatype array stays OR-joined (a media type is an EITHER choice)', () => {
+  // Only subject ANDs; mediatype keeps its OR semantics.
+  const q = buildAdvancedQuery({ mediatype: ['texts', 'audio'] });
+  assert.equal(q, 'mediatype:(texts OR audio)');
+});
+
 /* ------------------------------ date range -------------------------------- */
 
 test('date range builds a Lucene range clause', () => {

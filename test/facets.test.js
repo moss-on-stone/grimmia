@@ -99,3 +99,37 @@ test('applyFacetToSearch does not mutate the input search', () => {
   applyFacetToSearch(start, 'mediatype', 'texts');
   assert.deepEqual(start, copy);
 });
+
+/* ----- subject ACCUMULATES (multiple); other fields REPLACE (one at a time) - */
+
+test('applyFacetToSearch ACCUMULATES subjects — a second subject keeps the first', () => {
+  const start = { type: 'advanced', fields: { title: 'news', subject: 'China' } };
+  const out = applyFacetToSearch(start, 'subject', 'Newspapers');
+  assert.deepEqual(out.fields.subject, ['China', 'Newspapers'], 'both subjects kept');
+  assert.equal(out.fields.title, 'news', 'other filters untouched');
+});
+
+test('applyFacetToSearch keeps subjects as an array even from a single first pick', () => {
+  // The first subject is a scalar; clicking another grows it to an array.
+  const out = applyFacetToSearch({ type: 'advanced', fields: { subject: ['China'] } }, 'subject', 'Shanghai');
+  assert.deepEqual(out.fields.subject, ['China', 'Shanghai']);
+});
+
+test('applyFacetToSearch does NOT duplicate a subject already selected', () => {
+  const start = { type: 'advanced', fields: { subject: ['China'] } };
+  const out = applyFacetToSearch(start, 'subject', 'China');
+  assert.deepEqual(out.fields.subject, ['China'], 'no duplicate');
+});
+
+test('applyFacetToSearch REPLACES collection (one at a time)', () => {
+  const start = { type: 'advanced', fields: { collection: 'foo' } };
+  const out = applyFacetToSearch(start, 'collection', 'bar');
+  assert.equal(out.fields.collection, 'bar', 'collection replaced, not accumulated');
+});
+
+test('applyFacetToSearch REPLACES language / mediatype / year (one at a time)', () => {
+  assert.equal(applyFacetToSearch({ type: 'advanced', fields: { language: 'eng' } }, 'language', 'jpn').fields.language, 'jpn');
+  assert.equal(applyFacetToSearch({ type: 'advanced', fields: { mediatype: 'texts' } }, 'mediatype', 'audio').fields.mediatype, 'audio');
+  const yr = applyFacetToSearch({ type: 'advanced', fields: { dateFrom: '1900-01-01', dateTo: '1900-12-31' } }, 'year', '1977');
+  assert.equal(yr.fields.dateFrom, '1977-01-01');
+});

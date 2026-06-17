@@ -64,6 +64,13 @@
     if (field === 'year') {
       base.dateFrom = `${value}-01-01`;
       base.dateTo = `${value}-12-31`;
+    } else if (field === 'subject') {
+      // Subjects ACCUMULATE (search for items with ALL the chosen subjects).
+      // Other fields replace (one at a time). Dedup so a re-click is a no-op.
+      const existing = base.subject == null ? [] : Array.isArray(base.subject) ? base.subject : [base.subject];
+      const list = existing.map((s) => String(s));
+      if (!list.includes(String(value))) list.push(String(value));
+      base.subject = list;
     } else {
       base[field] = value;
     }

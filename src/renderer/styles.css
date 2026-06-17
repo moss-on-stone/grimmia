@@ -83,6 +83,10 @@ input, select, textarea {
 }
 /* #1: give the native dropdown caret breathing room on the right. */
 select { padding-right: 30px; }
+/* Toolbar/inline dropdowns should size to their WIDEST option so the text is
+   never clipped (e.g. "Most downloaded", "200"), not stretch to 100% of a
+   narrow flex slot. */
+.search-bar select, #sort-key, #per-page, #search-sort, #sort-dir { width: auto; min-width: max-content; }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 label { display: block; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
 label input, label select, label textarea { margin-top: 5px; color: var(--text); }
@@ -160,7 +164,7 @@ label input, label select, label textarea { margin-top: 5px; color: var(--text);
 /* ------------------------------- Search ---------------------------------- */
 .search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
 .search-bar input { flex: 1; }
-.search-bar select { width: 170px; }
+/* sort dropdown: size to its widest option (handled by the width:auto rule above). */
 /* #1: year inputs — narrow, smaller text, and no native number spinner. */
 .search-bar .year-input { width: 92px; flex: 0 0 auto; font-size: 12px; padding: 9px 9px; }
 .year-input::-webkit-outer-spin-button,
@@ -174,10 +178,19 @@ label input, label select, label textarea { margin-top: 5px; color: var(--text);
 .collection-input { width: 280px; font-size: 13px; padding: 6px 9px; }
 
 /* Faceted filtering (#8) */
-.results-meta-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.results-meta-row { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.results-meta-stack { display: flex; flex-direction: column; gap: 1px; }
+/* "N selected" sits under the results count in a smaller, lighter font. */
+.select-count { color: var(--muted); font-size: 11px; }
 .active-facets { display: flex; gap: 6px; flex-wrap: wrap; }
-.chip { background: var(--bg-elev2); color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+/* Active-filter pill: a clickable body (search just this term) + an × that
+   removes only this term. The two are distinct hit targets. */
+.chip { display: inline-flex; align-items: center; gap: 4px; background: var(--bg-elev2); color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 12px; }
 .chip:hover { border-color: var(--accent); }
+.chip-body { cursor: pointer; }
+.chip-body:hover { text-decoration: underline; }
+.chip-x { background: transparent; color: var(--muted); border: 0; border-radius: 999px; padding: 1px 6px; font-size: 12px; line-height: 1; cursor: pointer; }
+.chip-x:hover { background: var(--bg-elev); color: var(--text); }
 .results-layout { display: flex; gap: 16px; align-items: flex-start; }
 .facets { width: 200px; flex: 0 0 200px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px 12px; }
 /* #21: tighter top margin between facet sections so the lists are more compact. */
@@ -195,7 +208,7 @@ label input, label select, label textarea { margin-top: 5px; color: var(--text);
 .facets { align-self: stretch; max-height: calc(100vh - 150px); overflow-y: auto; }
 .results-layout .results-wrap { flex: 1; min-width: 0; }
 .search-bar button { white-space: nowrap; }
-.results-meta { color: var(--muted); font-size: 13px; margin-bottom: 10px; min-height: 18px; }
+.results-meta { color: var(--muted); font-size: 13px; min-height: 18px; }
 
 .results { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .card {
@@ -254,7 +267,6 @@ label input, label select, label textarea { margin-top: 5px; color: var(--text);
 .select-bar #download-selected { margin-left: auto; padding: 7px 14px; }
 /* #6: shrink the "Select all on page" label and count so the bar reads lighter. */
 .select-bar .select-all-lbl { font-size: 12px; }
-.select-bar #select-count { font-size: 12px; }
 .deselect-all { padding: 5px 10px; font-size: 12px; }
 .view-controls { display: flex; align-items: center; gap: 14px; }
 .list-sort { display: flex; align-items: center; gap: 6px; }

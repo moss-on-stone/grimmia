@@ -583,28 +583,72 @@ function renderActiveFacets() {
   wrap.innerHTML = '';
   if (!activeSearch || activeSearch.type !== 'advanced') return;
   const fields = activeSearch.fields || {};
-  const entries = Object.entries(fields).filter(([, v]) =>
-    Array.isArray(v) ? v.length : String(v || '').trim()
-  );
-  for (const [k, v] of entries) {
-    const display = Array.isArray(v) ? v.join(', ') : v;
-    wrap.appendChild(
-      el('button', {
-        class: 'chip',
-        title: `Remove ${k} filter`,
-        onclick: () => removeActiveField(k),
-      }, `${k}: ${display} ✕`)
-    );
+
+  // Build the chip list. Each chip carries the field + its specific value so the
+  // body click can search by JUST that term and the × can remove JUST it (a
+  // multi-subject filter renders one removable chip per subject).
+  const chips = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (k === 'dateFrom' || k === 'dateTo') continue; // shown together as one date chip below
+    if (Array.isArray(v)) {
+      for (const item of v) if (String(item).trim()) chips.push({ field: k, value: item, label: `${k}: ${item}` });
+    } else if (String(v || '').trim()) {
+      chips.push({ field: k, value: v, label: `${k}: ${v}` });
+    }
+  }
+  // A date range is one chip (searches just the date range when its body clicked).
+  if (String(fields.dateFrom || '').trim() || String(fields.dateTo || '').trim()) {
+    const from = fields.dateFrom || '*';
+    const to = fields.dateTo || '*';
+    chips.push({ field: 'date', value: null, label: `date: ${from} → ${to}` });
+  }
+
+  for (const chip of chips) {
+    // The chip BODY runs a search with only this one term (#).
+    const body = el('span', {
+      class: 'chip-body',
+      text: chip.label,
+      title: `Search for only “${chip.label}”`,
+      onclick: () => runSingleTermSearch(chip.field, chip.value),
+    });
+    // The × removes only this term, keeping the rest of the search.
+    const close = el('button', {
+      class: 'chip-x',
+      text: '✕',
+      title: `Remove ${chip.field} filter`,
+      onclick: (e) => {
+        e.stopPropagation();
+        removeActiveValue(chip.field, chip.value);
+      },
+    });
+    wrap.appendChild(el('span', { class: 'chip' }, [body, close]));
   }
 }
 
-function removeActiveField(key) {
+/** Run a search containing ONLY the given field/value (chip-body click). */
+function runSingleTermSearch(field, value) {
+  if (field === 'date') {
+    const f = activeSearch && activeSearch.fields ? activeSearch.fields : {};
+    activeSearch = { type: 'advanced', fields: { dateFrom: f.dateFrom, dateTo: f.dateTo } };
+  } else {
+    activeSearch = { type: 'advanced', fields: { [field]: value } };
+  }
+  runSearch(1);
+}
+
+/** Remove a single value of a filter (× click); other terms stay. */
+function removeActiveValue(field, value) {
   if (!activeSearch || activeSearch.type !== 'advanced') return;
   const fields = { ...activeSearch.fields };
-  delete fields[key];
-  if (key === 'year' || key === 'dateFrom' || key === 'dateTo') {
+  if (field === 'date') {
     delete fields.dateFrom;
     delete fields.dateTo;
+  } else if (Array.isArray(fields[field])) {
+    const next = fields[field].filter((x) => String(x) !== String(value));
+    if (next.length) fields[field] = next;
+    else delete fields[field];
+  } else {
+    delete fields[field];
   }
   activeSearch = { type: 'advanced', fields };
   runSearch(1);
@@ -699,7 +743,9 @@ function onPickClick(e, index, id, title, card) {
 
 function updateSelectionUI() {
   const summary = selectionUtil.selectionSummary(selected.size, filteredDocs.length);
-  $('#select-count').textContent = summary.label;
+  const countEl = $('#select-count');
+  countEl.textContent = summary.label; // "N selected"
+  countEl.hidden = selected.size === 0; // shown under the results count only when active
   $('#download-selected').disabled = !summary.canDeselect;
   $('#deselect-all').disabled = !summary.canDeselect;
 }

@@ -19,7 +19,30 @@ const {
   searchSignature,
   searchLabel,
   collectionIdForSearch,
+  isEmptySearch,
 } = require('../src/shared/search-store');
+
+/* ------------------------------ isEmptySearch ----------------------------- */
+// True when a search has no meaningful terms — used to clear the view instead
+// of running *:* (which would return the whole 123M-item archive).
+
+test('isEmptySearch: an advanced search with no non-blank fields is empty', () => {
+  assert.equal(isEmptySearch({ type: 'advanced', fields: {} }), true);
+  assert.equal(isEmptySearch({ type: 'advanced', fields: { title: '', subject: [] } }), true);
+  assert.equal(isEmptySearch({ type: 'advanced', fields: { mediatype: '   ' } }), true);
+});
+
+test('isEmptySearch: a search with any real term is NOT empty', () => {
+  assert.equal(isEmptySearch({ type: 'advanced', fields: { subject: ['China'] } }), false);
+  assert.equal(isEmptySearch({ type: 'advanced', fields: { dateFrom: '1940-01-01' } }), false);
+  assert.equal(isEmptySearch({ type: 'basic', q: 'cats' }), false);
+});
+
+test('isEmptySearch: a blank/absent basic query is empty; null is empty', () => {
+  assert.equal(isEmptySearch({ type: 'basic', q: '' }), true);
+  assert.equal(isEmptySearch({ type: 'basic', q: '   ' }), true);
+  assert.equal(isEmptySearch(null), true);
+});
 
 /* ---------------------------- collectionIdForSearch ----------------------- */
 // Returns the single collection id a search targets (so the "Download

@@ -258,6 +258,33 @@ test('active-filter chips: body searches just that term, only the × removes it'
   assert.match(css, /\.chip-x\s*\{/, 'expected a .chip-x style');
 });
 
+test('toolbar/select-bar wraps so it does not break at small window widths', () => {
+  const m = css.match(/\.select-bar\s*\{([^}]*)\}/);
+  assert.ok(m, 'expected a .select-bar rule');
+  assert.match(m[1], /flex-wrap\s*:\s*wrap/, 'select-bar must wrap');
+  assert.match(css, /\.search-bar\s*\{[^}]*flex-wrap\s*:\s*wrap/, 'search-bar must wrap too');
+});
+
+test('top banner has icon-only zoom in/out buttons wired to view.zoom', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
+  assert.match(html, /id="zoom-in"/, 'expected a #zoom-in button');
+  assert.match(html, /id="zoom-out"/, 'expected a #zoom-out button');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'renderer.js'), 'utf8');
+  assert.match(src, /#zoom-in'\)\.addEventListener[\s\S]*?view\.zoom\(\+1\)/, 'zoom-in wired to view.zoom(+1)');
+  assert.match(src, /#zoom-out'\)\.addEventListener[\s\S]*?view\.zoom\(-1\)/, 'zoom-out wired to view.zoom(-1)');
+});
+
+test('the filter placeholder reads "Filter page" and the back button is icon-only', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
+  assert.match(html, /id="results-filter"[^>]*placeholder="Filter page"/, 'filter placeholder is "Filter page"');
+  assert.match(html, /id="search-back"[^>]*>‹</, 'back button is the ‹ glyph only (no "Back" text)');
+});
+
+test('the upload derive toggle is removed (derive always runs)', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
+  assert.ok(!/id="up-derive"/.test(html), 'the #up-derive checkbox should be gone');
+});
+
 test('Search tab has a Back button left of the search box, wired up', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
   // The back button must come BEFORE the search input in the search bar.

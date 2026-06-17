@@ -183,6 +183,10 @@ $('#logout-btn').addEventListener('click', async () => {
   await refreshAuth();
 });
 
+// Banner zoom buttons — same effect as the View menu's Zoom In/Out.
+$('#zoom-in').addEventListener('click', () => window.ia.view.zoom(+1).catch(() => {}));
+$('#zoom-out').addEventListener('click', () => window.ia.view.zoom(-1).catch(() => {}));
+
 /* ------------------------------- tabs ------------------------------------ */
 document.querySelectorAll('.tab').forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -265,8 +269,32 @@ function goBackSearch() {
   updateBackButton();
 }
 
+/** Clear the results view back to the initial empty state (no query running). */
+function clearSearchView() {
+  activeSearch = null;
+  currentSearchSig = null;
+  lastDocs = [];
+  filteredDocs = [];
+  numFound = 0;
+  selected.clear();
+  $('#results').innerHTML = '';
+  $('#results-meta').textContent = '';
+  $('#active-facets').innerHTML = '';
+  $('#facets').hidden = true;
+  $('#pager').hidden = true;
+  $('#select-bar').hidden = true;
+  $('#search-empty').hidden = false;
+  $('#select-count').hidden = true;
+}
+
 async function runSearch(page = 1) {
   if (!activeSearch) return;
+  // When every filter has been removed, treat it as a cleared search and show an
+  // empty view — never run *:* (which would return the entire 123M-item archive).
+  if (searchStore.isEmptySearch(activeSearch)) {
+    clearSearchView();
+    return;
+  }
   // #9: selection persists across PAGES of the same query, but a NEW query
   // (different signature) starts fresh.
   const sig = searchStore.searchSignature(activeSearch);
@@ -2147,7 +2175,7 @@ $('#upload-form').addEventListener('submit', async (e) => {
     pageProgressionRl: $('#up-rtl').checked,
     oneUp: $('#up-1up').checked,
   });
-  const derive = $('#up-derive').checked;
+  const derive = true; // derive always runs (generates viewers/thumbnails)
   const files = uploadFiles;
 
   // Add the job card to the Uploads section (no tab switch) and badge it.
@@ -2235,7 +2263,7 @@ function renderBulkSummary(res) {
 
 $('#bulk-start').addEventListener('click', async () => {
   if (!bulkPlan || !bulkPlan.length) return;
-  const derive = $('#up-derive').checked;
+  const derive = true; // derive always runs (generates viewers/thumbnails)
   const jobId = nextJobId();
   const card = createJobCard(jobId, `Bulk upload (${bulkPlan.length} items)`, bulkPlan.length, 'upload');
   addJobCard(card, 'upload');

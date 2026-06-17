@@ -99,5 +99,19 @@
     return others.length ? '' : col;
   }
 
-  return { searchSignature, searchLabel, addRecent, addSaved, removeSaved, renameSaved, collectionIdForSearch };
+  /**
+   * Whether a search has no meaningful terms. An empty advanced search builds
+   * `*:*` (the entire archive), so the UI uses this to clear the results instead
+   * of running it.
+   */
+  function isEmptySearch(search) {
+    if (!search || typeof search !== 'object') return true;
+    if (search.type === 'advanced') {
+      const f = search.fields || {};
+      return !Object.values(f).some((v) => !isBlankValue(v));
+    }
+    return isBlankValue(search.q);
+  }
+
+  return { searchSignature, searchLabel, addRecent, addSaved, removeSaved, renameSaved, collectionIdForSearch, isEmptySearch };
 });

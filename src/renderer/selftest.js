@@ -92,6 +92,7 @@
     dialog: { chooseFolder: async () => '/tmp/ia-selftest' },
     shell: { openPath: async () => '', openExternal: async () => '' },
     logs: { open: async () => '' },
+    view: { zoom: async () => 0 },
   };
 
   window.ia = fakeIa;

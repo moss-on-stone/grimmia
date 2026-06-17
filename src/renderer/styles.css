@@ -70,6 +70,12 @@ button.ghost {
   color: var(--text);
 }
 button.ghost:hover { background: var(--bg-elev2); }
+/* Compact icon-only buttons (zoom, back) — square-ish, centered glyph. */
+button.icon-btn {
+  padding: 6px 10px; min-width: 34px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 16px;
+}
+.zoom-controls { display: inline-flex; gap: 4px; }
 
 input, select, textarea {
   font: inherit;
@@ -84,9 +90,12 @@ input, select, textarea {
 /* #1: give the native dropdown caret breathing room on the right. */
 select { padding-right: 30px; }
 /* Toolbar/inline dropdowns should size to their WIDEST option so the text is
-   never clipped (e.g. "Most downloaded", "200"), not stretch to 100% of a
-   narrow flex slot. */
-.search-bar select, #sort-key, #per-page, #search-sort, #sort-dir { width: auto; min-width: max-content; }
+   never clipped (e.g. "Most downloaded"), not stretch to 100% of a narrow flex
+   slot. */
+#sort-key, #search-sort { width: auto; min-width: max-content; }
+/* Per-page only ever holds a 2–3 digit number — keep it just wide enough for the
+   number plus the caret (no big empty gap). */
+#per-page { width: auto; min-width: 0; padding: 6px 26px 6px 9px; }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 label { display: block; margin-bottom: 12px; color: var(--muted); font-size: 13px; }
 label input, label select, label textarea { margin-top: 5px; color: var(--text); }
@@ -162,14 +171,13 @@ label input, label select, label textarea { margin-top: 5px; color: var(--text);
 .tab-panel.active { display: block; }
 
 /* ------------------------------- Search ---------------------------------- */
-.search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
-.search-bar input { flex: 1; }
+.search-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.search-bar #search-input { flex: 1 1 240px; min-width: 160px; }
 /* sort dropdown: size to its widest option (handled by the width:auto rule above). */
 /* #1: year inputs — narrow, smaller text, and no native number spinner. */
 .search-bar .year-input { width: 92px; flex: 0 0 auto; font-size: 12px; padding: 9px 9px; }
 .year-input::-webkit-outer-spin-button,
 .year-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.results-filter { flex: 1 1 200px; min-width: 140px; max-width: 320px; }
 .jump-to { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
 .jump-input { width: 64px; padding: 4px 8px; }
 .saved-bar { display: flex; gap: 8px; margin: -6px 0 16px; align-items: center; flex-wrap: wrap; }
@@ -260,22 +268,28 @@ label input, label select, label textarea { margin-top: 5px; color: var(--text);
 
 /* ---------------------------- Selection bar ------------------------------ */
 .select-bar {
-  display: flex; align-items: center; gap: 16px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   background: var(--bg-elev); border: 1px solid var(--border);
   border-radius: 8px; padding: 9px 14px; margin-bottom: 14px;
 }
-.select-bar #download-selected { margin-left: auto; padding: 7px 14px; }
-/* #6: shrink the "Select all on page" label and count so the bar reads lighter. */
-.select-bar .select-all-lbl { font-size: 12px; }
-.deselect-all { padding: 5px 10px; font-size: 12px; }
-.view-controls { display: flex; align-items: center; gap: 14px; }
+.select-bar #download-selected { margin-left: auto; padding: 7px 14px; flex: 0 0 auto; }
+/* #6: shrink the label so the bar reads lighter. */
+.select-bar .select-all-lbl { font-size: 12px; flex: 0 0 auto; white-space: nowrap; }
+.deselect-all { padding: 5px 10px; font-size: 12px; flex: 0 0 auto; }
+/* The live filter takes the slack and can shrink; the rest stay their size. */
+.results-filter { flex: 1 1 160px; min-width: 120px; }
+.view-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; flex: 0 0 auto; }
 .list-sort { display: flex; align-items: center; gap: 6px; }
 .list-sort select { padding: 5px 28px 5px 8px; font-size: 13px; }
 .list-sort #sort-dir { padding: 5px 9px; font-size: 13px; line-height: 1; }
-.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.seg-btn { background: transparent; color: var(--muted); border-radius: 0; padding: 6px 11px; font-size: 13px; }
+.seg { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex: 0 0 auto; }
+.seg-btn {
+  background: transparent; color: var(--muted); border: 0; border-radius: 0;
+  padding: 6px 12px; font-size: 13px; line-height: 1.2; white-space: nowrap;
+}
+.seg-btn + .seg-btn { border-left: 1px solid var(--border); }
 .seg-btn:hover { background: var(--bg-elev2); color: var(--text); }
-.seg-btn.active { background: var(--accent); color: #fff; }
+.seg-btn.active, .seg-btn.active:hover { background: var(--accent); color: #fff; }
 
 /* --------------------------- compact list view --------------------------- */
 .results.compact { display: flex; flex-direction: column; gap: 1px; }

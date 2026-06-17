@@ -114,6 +114,15 @@
     return viewMode === 'grid';
   }
 
+  const ZOOM_MIN = -3;
+  const ZOOM_MAX = 6;
+  /** Step a window zoom level by `delta`, clamped to a sane range. Rounds the
+   *  current level first so a fractional level steps by a clean ±1. */
+  function nextZoomLevel(current, delta) {
+    const n = Math.round(Number(current) || 0) + Math.round(Number(delta) || 0);
+    return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n));
+  }
+
   return {
     DEFAULT_PREFS,
     VIEW_MODES,
@@ -127,5 +136,6 @@
     thumbnailUrl,
     toSubjectList,
     shouldShowThumbs,
+    nextZoomLevel,
   };
 });

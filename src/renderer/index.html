@@ -53,6 +53,10 @@
           </nav>
         </div>
         <div class="topbar-right">
+          <div class="zoom-controls" role="group" aria-label="Zoom">
+            <button id="zoom-out" class="ghost icon-btn" title="Zoom out" aria-label="Zoom out">−</button>
+            <button id="zoom-in" class="ghost icon-btn" title="Zoom in" aria-label="Zoom in">+</button>
+          </div>
           <span id="who" class="who"></span>
           <button id="logout-btn" class="ghost">Sign out</button>
         </div>
@@ -61,7 +65,7 @@
       <!-- SEARCH TAB -->
       <section id="tab-search" class="tab-panel active">
         <div class="search-bar">
-          <button id="search-back" class="ghost" title="Back to the previous search" hidden>‹ Back</button>
+          <button id="search-back" class="ghost icon-btn" title="Back to the previous search" aria-label="Back to the previous search" hidden>‹</button>
           <input id="search-input" type="search" placeholder="Search — try title: subject: creator: keywords" />
           <!-- #12: always-visible year range. type=text + inputmode=numeric so
                there's no native up/down spinner; maxlength + JS sanitize keep it
@@ -145,7 +149,7 @@
           <label class="chk select-all-lbl"><input type="checkbox" id="select-all" /> Select All</label>
           <button id="deselect-all" class="ghost deselect-all" title="Clear the entire selection (all pages)" disabled>Deselect all</button>
           <!-- #10: live filter of the current results by title -->
-          <input id="results-filter" type="search" class="results-filter" placeholder="Filter these results by title…" />
+          <input id="results-filter" type="search" class="results-filter" placeholder="Filter page" title="Filter the results on this page by title" />
           <div class="view-controls">
             <!-- Compact-list sort (client-side, this page only). -->
             <div id="list-sort" class="list-sort" hidden>
@@ -213,6 +217,7 @@
           <h2>Favorites</h2>
           <span class="muted" id="fav-count"></span>
         </div>
+        <p class="muted small">Favorites are saved on this device — they are not synced to your archive.org profile.</p>
         <div id="favorites-list" class="results"></div>
         <div id="favorites-empty" class="empty">No favorites yet. Star an item from search or its detail view.</div>
       </section>
@@ -300,10 +305,6 @@
             Subjects <span class="muted">(comma-separated)</span>
             <input id="up-subjects" placeholder="history, music, 1977" />
           </label>
-          <label class="checkbox">
-            <input id="up-derive" type="checkbox" checked />
-            Run derive (generate viewers / thumbnails after upload)
-          </label>
 
           <!-- BookReader hints (texts). page-progression=rl + bookreader-defaults=mode/1up -->
           <fieldset class="reader-opts">
@@ -335,9 +336,14 @@
         <div class="bulk-upload">
           <h3 class="prefs-h">Bulk upload from a spreadsheet</h3>
           <p class="muted small">
-            CSV with an <code>identifier</code> and <code>file</code> column (paths relative to the CSV),
-            plus any metadata columns (title, creator, mediatype, subject…). Multiple rows with the same
-            identifier add several files to one item.
+            CSV with an <code>identifier</code> and <code>file</code> column, plus any metadata columns
+            (title, creator, mediatype, subject…). Multiple rows with the same identifier add several
+            files to one item.
+          </p>
+          <p class="muted small">
+            <strong>File paths are resolved relative to the CSV's own folder</strong> — so keep the
+            spreadsheet next to your files (e.g. a <code>file</code> value of <code>scans/p1.pdf</code>
+            means <em>&lt;folder-of-the-CSV&gt;/scans/p1.pdf</em>). Absolute paths also work.
           </p>
           <div class="bulk-row">
             <button type="button" id="bulk-choose" class="ghost">Choose CSV…</button>

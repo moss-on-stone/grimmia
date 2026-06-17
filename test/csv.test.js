@@ -13,7 +13,21 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { parseCsv, buildUploadPlan } = require('../src/main/csv');
+const { parseCsv, buildUploadPlan, resolveBulkFilePath } = require('../src/main/csv');
+const nodePath = require('node:path');
+
+/* --------------------------- resolveBulkFilePath -------------------------- */
+// A bulk-upload `file` value is resolved relative to the CSV's OWN folder.
+
+test('resolveBulkFilePath joins a relative file path onto the CSV directory', () => {
+  assert.equal(resolveBulkFilePath('/data/job', 'scans/p1.pdf'), nodePath.join('/data/job', 'scans/p1.pdf'));
+  assert.equal(resolveBulkFilePath('/data/job', 'a.pdf'), nodePath.join('/data/job', 'a.pdf'));
+});
+
+test('resolveBulkFilePath leaves an absolute path untouched', () => {
+  const abs = nodePath.resolve('/tmp/x.pdf');
+  assert.equal(resolveBulkFilePath('/data/job', abs), abs);
+});
 
 /* -------------------------------- parseCsv -------------------------------- */
 

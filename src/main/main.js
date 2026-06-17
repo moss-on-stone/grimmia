@@ -25,7 +25,7 @@ const store = require('./store');
 const { buildMenuTemplate } = require('./menu-template');
 const { buildAdvancedQuery, parseSearchInput } = require('./ia-query');
 const { FORMAT_PRESETS } = require('./download-prefs');
-const { DEFAULT_PREFS, normalizePrefs } = require('../shared/view-prefs');
+const { DEFAULT_PREFS, normalizePrefs, nextZoomLevel } = require('../shared/view-prefs');
 const { validateIdentifier } = require('./ipc-validate');
 const { handleDownloadStart } = require('./ipc-handlers');
 const { createTransferQueue } = require('./transfer-queue');
@@ -362,6 +362,14 @@ ipcMain.handle('shell:openExternal', async (_e, url) => {
   return '';
 });
 
+// Step the window zoom (banner +/- buttons), same effect as the View menu.
+ipcMain.handle('view:zoom', async (event, delta) => {
+  const wc = event.sender;
+  const level = nextZoomLevel(wc.getZoomLevel(), delta);
+  wc.setZoomLevel(level);
+  return level;
+});
+
 // Open the app's own logs folder (a known, app-controlled path — safe).
 ipcMain.handle('logs:open', async () => {
   const dir = logger.logDir();
@@ -548,7 +556,7 @@ ipcMain.handle('bulk:choose', async () => {
     const baseDir = path.dirname(csvPath);
     const resolved = plan.map((item) => {
       const files = item.files.map((rel) => {
-        const abs = path.isAbsolute(rel) ? rel : path.join(baseDir, rel);
+        const abs = csv.resolveBulkFilePath(baseDir, rel);
         return { rel, path: abs, exists: fs.existsSync(abs), size: safeSize(abs) };
       });
       return { ...item, files };

@@ -48,6 +48,18 @@ test('normalizePrefs validates formatOther to largest|all', () => {
   assert.equal(vp.normalizePrefs({}).formatOther, 'largest');
 });
 
+/* ------------------------------- zoom level ------------------------------- */
+// The banner zoom buttons step the window zoom level and clamp to a sane range.
+
+test('nextZoomLevel steps up/down and clamps to [-3, 6]', () => {
+  assert.equal(vp.nextZoomLevel(0, +1), 1);
+  assert.equal(vp.nextZoomLevel(0, -1), -1);
+  assert.equal(vp.nextZoomLevel(3, +1), 4);
+  assert.equal(vp.nextZoomLevel(6, +1), 6, 'clamped at the top');
+  assert.equal(vp.nextZoomLevel(-3, -1), -3, 'clamped at the bottom');
+  assert.equal(vp.nextZoomLevel(2.2, +1), 3, 'a fractional current level rounds then steps');
+});
+
 /* ----------------------- results per page --------------------------------- */
 
 test('DEFAULT_PREFS shows 200 results per page by default', () => {

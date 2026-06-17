@@ -9,7 +9,18 @@
  * the user tests against the live server themselves.
  */
 
+const path = require('node:path');
+
 const { validateIdentifier } = require('./ipc-validate');
+
+/**
+ * Resolve a bulk-upload `file` value to an absolute path. Relative paths are
+ * resolved against the CSV's OWN directory (so the spreadsheet sits next to its
+ * files); absolute paths pass through. Cross-platform (uses path.join).
+ */
+function resolveBulkFilePath(csvDir, rel) {
+  return path.isAbsolute(rel) ? rel : path.join(csvDir, rel);
+}
 
 /**
  * Parse CSV text into an array of row objects keyed by the (trimmed) header.
@@ -120,4 +131,4 @@ function buildUploadPlan(rows, { withErrors = false } = {}) {
   return withErrors ? { plan, errors } : plan;
 }
 
-module.exports = { parseCsv, buildUploadPlan };
+module.exports = { parseCsv, buildUploadPlan, resolveBulkFilePath };

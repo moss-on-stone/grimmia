@@ -77,4 +77,8 @@ contextBridge.exposeInMainWorld('ia', {
   logs: {
     open: () => ipcRenderer.invoke('logs:open'),
   },
+  view: {
+    // Adjust the window zoom (same effect as the View menu's Zoom In/Out).
+    zoom: (delta) => ipcRenderer.invoke('view:zoom', delta),
+  },
 });

@@ -209,7 +209,10 @@ label input, label select, label textarea { margin-top: 5px; color: var(--text);
 }
 .card:hover { border-color: var(--accent); }
 .card .thumb {
-  height: 150px; background: var(--bg-elev2) center/cover no-repeat;
+  /* Pin the thumbnail to a fixed height that never grows or shrinks, and clip
+     the image to it — so a tall image can't overflow onto the title below. */
+  flex: 0 0 150px; height: 150px; overflow: hidden;
+  background: var(--bg-elev2) center/cover no-repeat;
   display: grid; place-items: center; color: var(--muted); font-size: 12px;
 }
 /* #1/#2: dim the preview noticeably by default so the overlaid checkbox/star —

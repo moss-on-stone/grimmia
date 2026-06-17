@@ -31,6 +31,24 @@ test('#1 select controls have extra right padding so the caret isn\'t crowded', 
   );
 });
 
+test('grid thumbnail holds a FIXED height (flex 0 0) so it never overlaps the title text', () => {
+  // Bug: with only `height: 150px` and the default flex-shrink, a card with lots
+  // of content (subjects) could compress/overflow the thumb so the image bled
+  // over the title. `flex: 0 0 <h>` pins the thumb height so the body always
+  // starts below it.
+  const m = css.match(/\.card\s+\.thumb\s*\{([^}]*)\}/);
+  assert.ok(m, 'expected a .card .thumb rule');
+  assert.match(m[1], /flex\s*:\s*0\s+0\s+/, 'thumb must be flex: 0 0 <height> (no grow, no shrink)');
+});
+
+test('grid thumbnail image is clipped to its box (no vertical bleed over the text)', () => {
+  // The thumb container clips its image so an over-tall image can't spill past
+  // the 150px box onto the title.
+  const m = css.match(/\.card\s+\.thumb\s*\{([^}]*)\}/);
+  assert.ok(m, 'expected a .card .thumb rule');
+  assert.match(m[1], /overflow\s*:\s*hidden/, 'thumb must clip its image (overflow: hidden)');
+});
+
 test('#1 grid thumbnail returns to full brightness on card hover', () => {
   assert.match(
     css,

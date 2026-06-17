@@ -97,6 +97,39 @@ function promptText(label, initial = '') {
   });
 }
 
+// A yes/no confirmation modal (Electron disables window.confirm). Resolves true
+// on OK, false on Cancel/Escape.
+function confirmDialog(message, okLabel = 'Download') {
+  return new Promise((resolve) => {
+    const modal = $('#confirm-modal');
+    $('#confirm-message').textContent = message;
+    $('#confirm-ok').textContent = okLabel;
+    modal.hidden = false;
+    $('#confirm-ok').focus();
+
+    const cleanup = () => {
+      modal.hidden = true;
+      $('#confirm-ok').onclick = null;
+      $('#confirm-cancel').onclick = null;
+      modal.onkeydown = null;
+    };
+    $('#confirm-ok').onclick = () => {
+      cleanup();
+      resolve(true);
+    };
+    $('#confirm-cancel').onclick = () => {
+      cleanup();
+      resolve(false);
+    };
+    modal.onkeydown = (e) => {
+      if (e.key === 'Escape') {
+        cleanup();
+        resolve(false);
+      }
+    };
+  });
+}
+
 /* ------------------------------- auth ------------------------------------ */
 let loggedIn = false;
 // The logged-in account ({screenname, email}) — used to gate owner-only item
@@ -211,6 +244,27 @@ function advancedSearch(page = 1) {
 
 let currentSearchSig = null; // signature of the active query (selection scope)
 
+// Back-stack of previous search descriptors. A NEW distinct search pushes the
+// one it replaces; the Back button pops and re-runs it.
+let searchHistory = [];
+let lastRunSearch = null; // the search descriptor most recently run
+let navigatingBack = false; // suppress the push while popping
+
+/** Show/hide and enable the Back button from the history depth. */
+function updateBackButton() {
+  const btn = $('#search-back');
+  if (btn) btn.hidden = searchHistory.length === 0;
+}
+
+/** Go to the previous search view (#back button). */
+function goBackSearch() {
+  if (!searchHistory.length) return;
+  const prev = searchHistory.pop();
+  navigatingBack = true;
+  applySearch(prev); // restores form fields + sets activeSearch + runs
+  updateBackButton();
+}
+
 async function runSearch(page = 1) {
   if (!activeSearch) return;
   // #9: selection persists across PAGES of the same query, but a NEW query
@@ -218,8 +272,19 @@ async function runSearch(page = 1) {
   const sig = searchStore.searchSignature(activeSearch);
   if (sig !== currentSearchSig) {
     selected.clear();
+    // Back-stack: a new distinct search pushes the one it's replacing (unless we
+    // got here by pressing Back, or it's a duplicate of the top of the stack).
+    if (!navigatingBack && lastRunSearch) {
+      const topSig = searchHistory.length ? searchStore.searchSignature(searchHistory[searchHistory.length - 1]) : null;
+      if (searchStore.searchSignature(lastRunSearch) !== sig && topSig !== currentSearchSig) {
+        searchHistory.push(lastRunSearch);
+      }
+    }
     currentSearchSig = sig;
+    updateBackButton();
   }
+  navigatingBack = false;
+  lastRunSearch = activeSearch;
   currentPage = page;
   // #10: the live title filter applies to the current page only — reset on a new fetch.
   filterQuery = '';
@@ -677,6 +742,7 @@ $('#download-selected').addEventListener('click', () => {
 });
 
 $('#search-btn').addEventListener('click', () => basicSearch(1));
+$('#search-back').addEventListener('click', goBackSearch);
 $('#search-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') basicSearch(1);
 });
@@ -854,7 +920,14 @@ function applySearch(search) {
     $('#adv-date-to').value = f.dateTo || '';
     const mt = new Set(f.mediatype || []);
     document.querySelectorAll('.adv-mt').forEach((c) => (c.checked = mt.has(c.value)));
-    activeSearch = { type: 'advanced', fields: collectAdvFields() };
+    // Carry through fields with no visible form input (e.g. collection,
+    // identifier, text) so restoring a saved/back-navigated search doesn't drop
+    // them — the form fields take precedence; the extras are preserved.
+    const formFields = collectAdvFields();
+    const FORM_KEYS = new Set(Object.keys(formFields));
+    const extras = {};
+    for (const [k, v] of Object.entries(f)) if (!FORM_KEYS.has(k)) extras[k] = v;
+    activeSearch = { type: 'advanced', fields: { ...extras, ...formFields } };
     runSearch(1);
   } else {
     $('#search-input').value = search.q || '';
@@ -1317,31 +1390,23 @@ async function downloadCollection(collection) {
 
 // #15: the collection-download button is only shown when the CURRENT search is
 // a `collection:<id>` search; it downloads that very collection.
-$('#download-collection').addEventListener('click', () => {
+$('#download-collection').addEventListener('click', async () => {
   const id = activeCollectionId();
-  if (id) downloadCollection(id);
+  if (!id) return;
+  // Confirm before pulling a large collection (the current result count is the
+  // collection's size when this button is shown).
+  const warning = uiUtil.largeCollectionWarning(numFound, id);
+  if (warning && !(await confirmDialog(warning))) return;
+  downloadCollection(id);
 });
 
 /**
  * #15: the collection id the active search targets, or '' if the current search
- * isn't a single-collection search. Handles both a basic `collection:foo` query
- * and an advanced search whose only meaningful field is `collection`.
+ * isn't a single-collection search. Delegates to the shared (tested) helper so
+ * a typed `collection:foo` query shows the Download-collection button too.
  */
 function activeCollectionId() {
-  if (!activeSearch) return '';
-  if (activeSearch.type === 'basic') {
-    const m = /^\s*collection:\s*("([^"]+)"|(\S+))\s*$/i.exec(activeSearch.q || '');
-    return m ? (m[2] || m[3] || '') : '';
-  }
-  const f = activeSearch.fields || {};
-  const col = Array.isArray(f.collection) ? (f.collection.length === 1 ? f.collection[0] : '') : f.collection;
-  if (!col || !String(col).trim()) return '';
-  // Only when collection is the sole filter (other fields would scope it down).
-  const others = Object.keys(f).filter((k) => k !== 'collection' && !isBlankField(f[k]));
-  return others.length ? '' : String(col).trim();
-}
-function isBlankField(v) {
-  return Array.isArray(v) ? v.length === 0 : !String(v == null ? '' : v).trim();
+  return searchStore.collectionIdForSearch(activeSearch);
 }
 
 /** Show/hide the collection-download button based on the active search (#15). */

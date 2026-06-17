@@ -228,6 +228,22 @@ test('#16 Preferences has an inter-download delay number input', () => {
   assert.match(html, /id="pref-download-delay"/, 'expected a #pref-download-delay input');
 });
 
+test('Search tab has a Back button left of the search box, wired up', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
+  // The back button must come BEFORE the search input in the search bar.
+  assert.match(html, /id="search-back"[\s\S]*?id="search-input"/, 'back button left of the search box');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'renderer.js'), 'utf8');
+  assert.match(src, /#search-back'\)\.addEventListener\('click', goBackSearch\)/, 'back button wired to goBackSearch');
+});
+
+test('a yes/no confirm modal exists and the collection download uses it for >50 items', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
+  assert.match(html, /id="confirm-modal"/, 'expected a #confirm-modal');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'renderer.js'), 'utf8');
+  assert.match(src, /largeCollectionWarning\(numFound/, 'collection download must check largeCollectionWarning');
+  assert.match(src, /confirmDialog\(/, 'must confirm before a large collection download');
+});
+
 test('Preferences has a re-download (vs skip existing) toggle, wired up', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
   assert.match(html, /id="pref-redownload"/, 'expected a #pref-redownload toggle');

@@ -18,7 +18,33 @@ const {
   renameSaved,
   searchSignature,
   searchLabel,
+  collectionIdForSearch,
 } = require('../src/shared/search-store');
+
+/* ---------------------------- collectionIdForSearch ----------------------- */
+// Returns the single collection id a search targets (so the "Download
+// collection" button shows), or '' when it isn't a single-collection search.
+
+test('collectionIdForSearch reads a basic "collection:foo" query', () => {
+  assert.equal(collectionIdForSearch({ type: 'basic', q: 'collection:xishijie-archive' }), 'xishijie-archive');
+  assert.equal(collectionIdForSearch({ type: 'basic', q: '  collection: prelinger ' }), 'prelinger');
+  assert.equal(collectionIdForSearch({ type: 'basic', q: 'collection:"my coll"' }), 'my coll');
+});
+
+test('collectionIdForSearch reads an advanced search whose only field is collection', () => {
+  assert.equal(collectionIdForSearch({ type: 'advanced', fields: { collection: 'prelinger' } }), 'prelinger');
+});
+
+test('collectionIdForSearch returns "" when other terms scope the collection down', () => {
+  assert.equal(collectionIdForSearch({ type: 'basic', q: 'collection:prelinger cats' }), '', 'extra words');
+  assert.equal(collectionIdForSearch({ type: 'advanced', fields: { collection: 'prelinger', mediatype: 'movies' } }), '', 'extra field');
+});
+
+test('collectionIdForSearch returns "" for non-collection searches', () => {
+  assert.equal(collectionIdForSearch({ type: 'basic', q: 'cats' }), '');
+  assert.equal(collectionIdForSearch({ type: 'advanced', fields: { creator: 'x' } }), '');
+  assert.equal(collectionIdForSearch(null), '');
+});
 
 /* ------------------------------- searchLabel ------------------------------ */
 

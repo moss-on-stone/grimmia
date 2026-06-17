@@ -215,6 +215,16 @@
     return `https://archive.org/details/@${encodeURIComponent(name)}`;
   }
 
+  /**
+   * Confirm message before downloading a whole collection with more than
+   * `threshold` (default 50) items, or null when no confirmation is needed.
+   */
+  function largeCollectionWarning(count, name, threshold = 50) {
+    const n = Number(count) || 0;
+    if (n <= threshold) return null;
+    return `Are you sure you want to download all ${n.toLocaleString()} items from the collection “${name}”?`;
+  }
+
   /** Escape text for safe insertion as HTML text content. */
   function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -241,6 +251,7 @@
     transferBadge,
     itemPageUrl,
     userProfileUrl,
+    largeCollectionWarning,
     UPLOAD_LANGUAGES,
   };
 });

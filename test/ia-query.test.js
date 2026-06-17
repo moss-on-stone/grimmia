@@ -51,6 +51,23 @@ test('creator filter is added', () => {
   assert.equal(q, 'creator:("natsume soseki")');
 });
 
+test('collection filter builds a collection: clause (not dropped → no *:* blowout)', () => {
+  // Regression: collection used to be omitted from the clause loop, so a
+  // "Collection:" search collapsed to *:* and returned the whole archive.
+  const q = buildAdvancedQuery({ collection: 'xishijie-archive' });
+  assert.equal(q, 'collection:(xishijie-archive)');
+});
+
+test('identifier filter builds an identifier: clause', () => {
+  const q = buildAdvancedQuery({ identifier: 'NPTCM19400622' });
+  assert.equal(q, 'identifier:(NPTCM19400622)');
+});
+
+test('collection combines with other fields', () => {
+  const q = buildAdvancedQuery({ collection: 'prelinger', mediatype: 'movies' });
+  assert.equal(q, 'collection:(prelinger) AND mediatype:(movies)');
+});
+
 /* ------------------------------ date range -------------------------------- */
 
 test('date range builds a Lucene range clause', () => {

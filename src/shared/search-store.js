@@ -77,5 +77,27 @@
     return (list || []).map((e) => (e.name === oldName ? { ...e, name: newName } : e));
   }
 
-  return { searchSignature, searchLabel, addRecent, addSaved, removeSaved, renameSaved };
+  /**
+   * The single collection id a search targets, or '' when it isn't a
+   * single-collection search. Used to show the "Download collection" button
+   * (which makes sense only when EXACTLY one whole collection is the search).
+   * Handles a basic `collection:foo` query and an advanced search whose only
+   * field is `collection`.
+   */
+  function collectionIdForSearch(search) {
+    if (!search || typeof search !== 'object') return '';
+    if (search.type === 'basic') {
+      const m = /^\s*collection:\s*("([^"]+)"|(\S+))\s*$/i.exec(search.q || '');
+      return m ? (m[2] || m[3] || '').trim() : '';
+    }
+    const f = search.fields || {};
+    const raw = Array.isArray(f.collection) ? (f.collection.length === 1 ? f.collection[0] : '') : f.collection;
+    const col = String(raw == null ? '' : raw).trim();
+    if (!col) return '';
+    // Collection must be the SOLE filter — any other non-blank field scopes it.
+    const others = Object.keys(f).filter((k) => k !== 'collection' && !isBlankValue(f[k]));
+    return others.length ? '' : col;
+  }
+
+  return { searchSignature, searchLabel, addRecent, addSaved, removeSaved, renameSaved, collectionIdForSearch };
 });

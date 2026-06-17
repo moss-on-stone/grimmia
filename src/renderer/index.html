@@ -61,6 +61,7 @@
       <!-- SEARCH TAB -->
       <section id="tab-search" class="tab-panel active">
         <div class="search-bar">
+          <button id="search-back" class="ghost" title="Back to the previous search" hidden>‹ Back</button>
           <input id="search-input" type="search" placeholder="Search — try title: subject: creator: keywords" />
           <!-- #12: always-visible year range. type=text + inputmode=numeric so
                there's no native up/down spinner; maxlength + JS sanitize keep it
@@ -619,6 +620,17 @@
       <div class="modal-card">
         <button id="item-close" class="modal-close" title="Close">×</button>
         <div id="item-body" class="item-body"></div>
+      </div>
+    </div>
+
+    <!-- Generic yes/no confirmation (Electron disables window.confirm) -->
+    <div id="confirm-modal" class="modal" hidden>
+      <div class="modal-card prompt-card">
+        <p id="confirm-message" class="prompt-label"></p>
+        <div class="prompt-actions">
+          <button id="confirm-cancel" class="ghost">Cancel</button>
+          <button id="confirm-ok">Download</button>
+        </div>
       </div>
     </div>
 

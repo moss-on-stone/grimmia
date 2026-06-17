@@ -172,6 +172,33 @@ test('itemPageUrl returns empty for a missing identifier', () => {
   assert.equal(u.itemPageUrl(null), '');
 });
 
+/* -------------------------- largeCollectionWarning ------------------------ */
+// A confirm message shown before downloading a collection with more than the
+// threshold (default 50) items; null when no confirm is needed.
+
+test('largeCollectionWarning warns above the threshold with count + name', () => {
+  const msg = u.largeCollectionWarning(359, 'north-china-daily-news');
+  assert.match(msg, /359/);
+  assert.match(msg, /north-china-daily-news/);
+  assert.match(msg, /download all/i);
+});
+
+test('largeCollectionWarning returns null at or below the threshold (no confirm)', () => {
+  assert.equal(u.largeCollectionWarning(50, 'x'), null);
+  assert.equal(u.largeCollectionWarning(10, 'x'), null);
+  assert.equal(u.largeCollectionWarning(51, 'x') === null, false, '51 needs a confirm');
+});
+
+test('largeCollectionWarning formats large counts with separators', () => {
+  const msg = u.largeCollectionWarning(123456, 'big');
+  assert.match(msg, /123,456/);
+});
+
+test('largeCollectionWarning honors a custom threshold', () => {
+  assert.equal(u.largeCollectionWarning(5, 'x', 10), null);
+  assert.ok(u.largeCollectionWarning(11, 'x', 10));
+});
+
 /* ----------------------------- userProfileUrl ----------------------------- */
 // Clicking the logged-in username opens that account's archive.org profile,
 // which lives at https://archive.org/details/@<screenname>.

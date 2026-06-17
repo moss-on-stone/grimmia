@@ -111,7 +111,9 @@ function buildAdvancedQuery(f = {}) {
     if (safe) clauses.push(`(${safe})`);
   }
 
-  for (const field of ['title', 'subject', 'creator', 'language']) {
+  // NOTE: `collection` and `identifier` MUST be here — omitting collection made a
+  // "Collection:" search collapse to *:* and return the entire archive (~123M).
+  for (const field of ['title', 'subject', 'creator', 'language', 'collection', 'identifier']) {
     const c = fieldClause(field, f[field]);
     if (c) clauses.push(c);
   }

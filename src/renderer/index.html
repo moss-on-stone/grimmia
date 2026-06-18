@@ -66,6 +66,17 @@
       <section id="tab-search" class="tab-panel active">
         <div class="search-bar">
           <button id="search-back" class="ghost icon-btn" title="Back to the previous search" aria-label="Back to the previous search" hidden>‹</button>
+          <!-- Scope dropdown: wraps the typed words in a field (title:(…), etc.).
+               Auto-blanks when the user types a recognized `field:` token inline,
+               and reverts to "Everything" when no such token remains. -->
+          <select id="search-scope" title="Search in">
+            <option value="Everything">Everything</option>
+            <option value="title">Title</option>
+            <option value="creator">Creator</option>
+            <option value="description">Description</option>
+            <option value="collection">Collection</option>
+            <option value="subject">Subject</option>
+          </select>
           <input id="search-input" type="search" placeholder="Search — try title: subject: creator: keywords" />
           <!-- #12: always-visible year range. type=text + inputmode=numeric so
                there's no native up/down spinner; maxlength + JS sanitize keep it
@@ -74,12 +85,17 @@
                  maxlength="7" autocomplete="off" placeholder="from YYYY" title="From year (or YYYY-MM for a month)" />
           <input id="quick-date-to" class="year-input" type="text" inputmode="numeric"
                  maxlength="7" autocomplete="off" placeholder="to YYYY" title="To year (or YYYY-MM for a month)" />
-          <select id="search-sort" title="Sort">
-            <option value="">Best match</option>
-            <option value="downloads desc">Most downloaded</option>
-            <option value="publicdate desc">Newest</option>
-            <option value="publicdate asc">Oldest</option>
-            <option value="titleSorter asc">Title A–Z</option>
+          <!-- Global (server-side) sort — re-queries archive.org. Mirrors the
+               sort options archive.org's own search offers. "Relevance" is IA's
+               default order (empty sort param). -->
+          <select id="search-sort" title="Sort all results (re-queries archive.org)">
+            <option value="">Relevance</option>
+            <option value="date desc">Date published</option>
+            <option value="addeddate desc">Date archived</option>
+            <option value="creatorSorter asc">Creator</option>
+            <option value="titleSorter asc">Title</option>
+            <option value="downloads desc">All-time views</option>
+            <option value="week desc">Weekly views</option>
           </select>
           <button id="adv-toggle" class="ghost" title="Advanced search">Advanced ▾</button>
           <button id="search-btn">Search</button>
@@ -151,19 +167,6 @@
           <!-- #10: live filter of the current results by title -->
           <input id="results-filter" type="search" class="results-filter" placeholder="Filter page" title="Filter the results on this page by title" />
           <div class="view-controls">
-            <!-- Compact-list sort (client-side, this page only). -->
-            <div id="list-sort" class="list-sort" hidden>
-              <label class="muted" for="sort-key">Sort:</label>
-              <select id="sort-key" title="Sort this page by">
-                <option value="">— page order —</option>
-                <option value="title">Title</option>
-                <option value="date">Date</option>
-                <option value="downloads">Downloads</option>
-                <option value="item_size">Size</option>
-                <option value="mediatype">Media type</option>
-              </select>
-              <button id="sort-dir" class="ghost" title="Toggle sort direction" data-dir="asc">↑</button>
-            </div>
             <!-- #8: results per page -->
             <label class="chk muted" title="Results per page">
               Per page
@@ -190,6 +193,21 @@
             <div id="select-count" class="select-count" hidden></div>
           </div>
           <div id="active-facets" class="active-facets"></div>
+        </div>
+        <!-- Compact-list sort (client-side, this page only) — sits directly under
+             the "N results — showing 1–N" line so it reads as a page-scoped sort.
+             Shown only in List view (renderer toggles `hidden`). -->
+        <div id="list-sort" class="list-sort" hidden>
+          <label class="muted" for="sort-key">Sort page:</label>
+          <select id="sort-key" title="Sort only the results loaded on this page">
+            <option value="">— page order —</option>
+            <option value="title">Title</option>
+            <option value="date">Date</option>
+            <option value="downloads">Downloads</option>
+            <option value="item_size">Size</option>
+            <option value="mediatype">Media type</option>
+          </select>
+          <button id="sort-dir" class="ghost" title="Toggle sort direction" data-dir="asc">↑</button>
         </div>
         <div class="results-layout">
           <!-- Facet sidebar (#8) -->

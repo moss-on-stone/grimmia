@@ -27,7 +27,7 @@ contextBridge.exposeInMainWorld('ia', {
     query: (query, opts = {}) => ipcRenderer.invoke('search:query', { query, ...opts }),
     advanced: (fields, opts = {}) => ipcRenderer.invoke('search:advanced', { fields, ...opts }),
     buildQuery: (fields) => ipcRenderer.invoke('search:buildQuery', { fields }),
-    parseInput: (input) => ipcRenderer.invoke('search:parseInput', { input }),
+    parseInput: (input, scope) => ipcRenderer.invoke('search:parseInput', { input, scope }),
   },
   item: {
     metadata: (identifier) => ipcRenderer.invoke('item:metadata', { identifier }),

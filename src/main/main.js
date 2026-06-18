@@ -289,7 +289,7 @@ ipcMain.handle('search:advanced', async (_e, { fields, page, rows, sort }) => {
 ipcMain.handle('search:buildQuery', async (_e, { fields }) => buildAdvancedQuery(fields || {}));
 
 // #13: parse `field:value` meta keywords from the basic search box.
-ipcMain.handle('search:parseInput', async (_e, { input }) => parseSearchInput(input || ''));
+ipcMain.handle('search:parseInput', async (_e, { input, scope }) => parseSearchInput(input || '', scope));
 
 ipcMain.handle('item:metadata', async (_e, { identifier }) => {
   validateIdentifier(identifier); // M6: re-validate at the boundary like every other handler

@@ -160,7 +160,11 @@ function buildAdvancedQuery(f = {}) {
 }
 
 // Field keywords recognized in the basic search box (#13).
-const SEARCH_FIELDS = ['title', 'subject', 'creator', 'language', 'mediatype', 'date', 'collection', 'identifier'];
+const SEARCH_FIELDS = ['title', 'subject', 'creator', 'description', 'language', 'mediatype', 'date', 'collection', 'identifier'];
+
+// Fields the search-box scope dropdown can wrap free text into. A subset of
+// SEARCH_FIELDS — the ones that read naturally as "search in <field>".
+const SCOPE_FIELDS = ['title', 'creator', 'description', 'collection', 'subject'];
 
 /**
  * Parse a basic-search string with optional `field:value` keywords into a
@@ -168,9 +172,13 @@ const SEARCH_FIELDS = ['title', 'subject', 'creator', 'language', 'mediatype', '
  * everything else becomes the free-text `text` field. Quoted values keep their
  * spaces. Unknown `foo:` tokens are left in the free text.
  *
+ * @param {string} input the raw search-box text
+ * @param {string} [scope] the scope dropdown value. A real SCOPE_FIELDS field
+ *   (e.g. 'title') routes the LEFTOVER free text into that field instead of the
+ *   generic `text` field; '' / 'Everything' / unknown values leave it generic.
  * @returns {{fields: Object}}
  */
-function parseSearchInput(input) {
+function parseSearchInput(input, scope) {
   const s = String(input || '').trim();
   const fields = {};
   if (!s) return { fields };
@@ -194,8 +202,13 @@ function parseSearchInput(input) {
     }
   }
   const text = freeText.join(' ').trim();
-  if (text) fields.text = text;
+  if (text) {
+    // A real scope field wraps the leftover free text into that field; otherwise
+    // it stays as the generic free-text clause.
+    const target = SCOPE_FIELDS.includes(String(scope)) ? String(scope) : 'text';
+    fields[target] = text;
+  }
   return { fields };
 }
 
-module.exports = { buildAdvancedQuery, escapeFieldValue, parseSearchInput, normalizeDateBound, SEARCH_FIELDS };
+module.exports = { buildAdvancedQuery, escapeFieldValue, parseSearchInput, normalizeDateBound, SEARCH_FIELDS, SCOPE_FIELDS };

@@ -225,6 +225,56 @@
     return `Are you sure you want to download all ${n.toLocaleString()} items from the collection “${name}”?`;
   }
 
+  /**
+   * Disclosure for the facet sidebar (#8): the counts are tallied from ONLY the
+   * docs loaded on the current page (`lastDocs`), not the full result set — so a
+   * "1940 — 15" facet can become 452 after clicking, because the click re-queries
+   * archive.org for the whole set. This returns the caption + tooltip that make
+   * that scope explicit, or `null` when no disclosure is needed (the whole result
+   * set is already loaded, so the counts ARE the totals).
+   *
+   * @param {number} loaded the number of docs loaded on this page (lastDocs.length)
+   * @param {number} total  the true result count from archive.org (numFound)
+   * @returns {{caption:string, tooltip:string}|null}
+   */
+  function facetScopeNote(loaded, total) {
+    const l = Math.floor(Number(loaded));
+    const t = Math.floor(Number(total));
+    // Bad input, nothing loaded, or the whole set is in hand → no disclosure.
+    if (!Number.isFinite(l) || !Number.isFinite(t) || l <= 0 || t <= 0 || l >= t) {
+      return null;
+    }
+    return {
+      caption: `from the ${l.toLocaleString()} items shown`,
+      tooltip:
+        `Counts reflect the ${l.toLocaleString()} results loaded on this page. ` +
+        `Clicking a value searches all ${t.toLocaleString()}.`,
+    };
+  }
+
+  /**
+   * Decide what the search-box scope dropdown should show for the current input.
+   * The dropdown (Everything/Title/Creator/…) auto-blanks the moment the user
+   * types a recognized `field:` token — the inline filter now governs the field,
+   * so a dropdown scope would be redundant/confusing. With no recognized token in
+   * the box it reverts to 'Everything'.
+   *
+   * @param {string} text the raw search-box text
+   * @param {string[]} fields the recognized field names (e.g. ia-query SEARCH_FIELDS)
+   * @returns {'Everything'|''} 'Everything' (plain text) or '' (blank — a token is present)
+   */
+  function scopeFromInput(text, fields) {
+    const s = String(text == null ? '' : text);
+    const known = (fields || []).map((f) => String(f).toLowerCase());
+    // Any `word:` token whose name is a recognized field blanks the dropdown.
+    const re = /(\w+):/g;
+    let m;
+    while ((m = re.exec(s)) !== null) {
+      if (known.includes(m[1].toLowerCase())) return '';
+    }
+    return 'Everything';
+  }
+
   /** Escape text for safe insertion as HTML text content. */
   function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -252,6 +302,8 @@
     itemPageUrl,
     userProfileUrl,
     largeCollectionWarning,
+    facetScopeNote,
+    scopeFromInput,
     UPLOAD_LANGUAGES,
   };
 });

@@ -207,14 +207,38 @@ let ROWS = viewPrefs.DEFAULT_PREFS.perPage;
 // The active search: { type:'basic', q } or { type:'advanced', fields }.
 let activeSearch = null;
 
+// Field names recognized as inline `field:` keywords in the search box. Mirrors
+// ia-query.js SEARCH_FIELDS (main process); a test asserts they stay in sync.
+// Used to auto-blank the scope dropdown when the user types one of these inline.
+const SEARCH_FIELDS = ['title', 'subject', 'creator', 'description', 'language', 'mediatype', 'date', 'collection', 'identifier'];
+
+/** Sync the scope dropdown to the current input (auto-blank on inline token). */
+function syncSearchScope() {
+  const sel = $('#search-scope');
+  const input = $('#search-input');
+  if (!sel || !input) return;
+  // scopeFromInput returns '' (blank) when a recognized field: token is present,
+  // else 'Everything'. We only OVERRIDE a user-chosen field scope back to
+  // Everything when no token remains — but always blank when a token appears.
+  const implied = uiUtil.scopeFromInput(input.value, SEARCH_FIELDS);
+  if (implied === '') {
+    sel.value = ''; // a token is present → blank (inline filter governs)
+  } else if (sel.value === '') {
+    sel.value = 'Everything'; // token removed → restore to Everything
+  }
+}
+
 async function basicSearch(page = 1) {
   const q = $('#search-input').value.trim();
   if (!q) return;
   // #13: parse `field:value` keywords (title:, subject:, …). If any are present,
-  // run a structured search; otherwise a plain basic search.
+  // run a structured search; otherwise a plain basic search. The scope dropdown
+  // wraps the leftover free text into a field (title:(…) etc.); 'Everything' (or
+  // blank, when an inline token has blanked it) leaves the text generic.
+  const scope = $('#search-scope') ? $('#search-scope').value : 'Everything';
   let parsed;
   try {
-    parsed = await window.ia.search.parseInput(q);
+    parsed = await window.ia.search.parseInput(q, scope);
   } catch {
     parsed = { fields: { text: q } };
   }
@@ -288,6 +312,7 @@ function clearSearchView() {
   $('#facets').hidden = true;
   $('#pager').hidden = true;
   $('#select-bar').hidden = true;
+  $('#list-sort').hidden = true; // no results → hide the page-sort row (now a sibling of #select-bar)
   $('#search-empty').hidden = false;
   $('#select-count').hidden = true;
   updateBackButton();
@@ -500,6 +525,14 @@ function renderFacets() {
   if (!lastDocs.length) {
     aside.hidden = true;
     return;
+  }
+  // The counts below are tallied from ONLY the docs loaded on this page, not the
+  // full result set — so disclose that scope when more results exist than are
+  // loaded (clicking a value re-queries the whole set and can show a far larger
+  // count). uiUtil.facetScopeNote returns null when the whole set is loaded.
+  const scope = uiUtil.facetScopeNote(lastDocs.length, numFound);
+  if (scope) {
+    aside.appendChild(el('p', { class: 'facet-scope', text: scope.caption, title: scope.tooltip }));
   }
   const computed = facets.computeFacets(lastDocs, facets.FACET_FIELDS);
   const labels = { mediatype: 'Media type', year: 'Year', subject: 'Subject', language: 'Language', collection: 'Collection' };
@@ -831,6 +864,9 @@ $('#search-back').addEventListener('click', goBackSearch);
 $('#search-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') basicSearch(1);
 });
+// Auto-blank the scope dropdown the moment a recognized `field:` token is typed;
+// restore to Everything when no token remains (a user-chosen field scope is kept).
+$('#search-input').addEventListener('input', syncSearchScope);
 // #12: the always-visible year range also triggers a search on Enter.
 ['#quick-date-from', '#quick-date-to'].forEach((sel) => {
   const input = $(sel);

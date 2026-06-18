@@ -61,3 +61,44 @@ test('empty input yields empty fields', () => {
   assert.deepEqual(parseSearchInput('').fields, {});
   assert.deepEqual(parseSearchInput('   ').fields, {});
 });
+
+test('description is a recognized field keyword', () => {
+  const r = parseSearchInput('description:shipping');
+  assert.equal(r.fields.description, 'shipping');
+  assert.ok(!r.fields.text);
+});
+
+/* --------- scope dropdown: free text is wrapped in the chosen field -------- */
+// The search-box scope dropdown (Everything/Title/Creator/Description/
+// Collection/Subject) passes its value as the 2nd arg. A real field scope routes
+// the leftover free text into THAT field instead of the generic `text` field.
+
+test('scope routes plain free text into the chosen field', () => {
+  const r = parseSearchInput('black cats', 'title');
+  assert.equal(r.fields.title, 'black cats');
+  assert.ok(!r.fields.text, 'free text should not also land in `text`');
+});
+
+test('scope of Everything (or blank) leaves free text as the generic text field', () => {
+  assert.deepEqual(parseSearchInput('black cats', 'Everything').fields, { text: 'black cats' });
+  assert.deepEqual(parseSearchInput('black cats', '').fields, { text: 'black cats' });
+  assert.deepEqual(parseSearchInput('black cats').fields, { text: 'black cats' });
+});
+
+test('inline field tokens still win; scope only wraps the leftover free text', () => {
+  // subject:fiction is extracted as before; the leftover "soseki" goes to title.
+  const r = parseSearchInput('soseki subject:fiction', 'title');
+  assert.equal(r.fields.subject, 'fiction');
+  assert.equal(r.fields.title, 'soseki');
+  assert.ok(!r.fields.text);
+});
+
+test('scope with no free text adds nothing (no empty field clause)', () => {
+  const r = parseSearchInput('subject:fiction', 'title');
+  assert.equal(r.fields.subject, 'fiction');
+  assert.ok(!('title' in r.fields), 'no leftover text → no title field');
+});
+
+test('an unknown scope value is ignored (free text stays generic)', () => {
+  assert.deepEqual(parseSearchInput('hello', 'bogus').fields, { text: 'hello' });
+});

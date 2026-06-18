@@ -261,3 +261,64 @@ test('firstOf returns first element of array or the value itself', () => {
   assert.equal(u.firstOf('solo'), 'solo');
   assert.equal(u.firstOf(undefined), '');
 });
+
+/* ---------------------------- facetScopeNote ------------------------------ */
+// The facet counts are tallied client-side from only the docs loaded on the
+// current page (lastDocs), NOT the full result set. So "1940 — 15" means "15
+// of the loaded items", while clicking it re-queries archive.org and can show
+// 452. facetScopeNote() produces the disclosure caption + tooltip that makes
+// this scope explicit, given (loaded count, true total numFound).
+
+test('facetScopeNote discloses the loaded subset when total exceeds loaded', () => {
+  const note = u.facetScopeNote(200, 16359);
+  assert.ok(note, 'a note should be returned when the loaded subset is partial');
+  assert.equal(note.caption, 'from the 200 items shown');
+  // The tooltip must mention BOTH the loaded count and the full total, and that
+  // clicking searches the whole set — so the count change on click isn't a shock.
+  assert.match(note.tooltip, /200/);
+  assert.match(note.tooltip, /16,359/); // full total, thousands-separated
+  assert.match(note.tooltip, /clic/i); // explains that clicking re-queries
+});
+
+test('facetScopeNote returns null when the whole result set is loaded', () => {
+  // Counts ARE the totals here, so no disclosure is needed.
+  assert.equal(u.facetScopeNote(40, 40), null);
+  assert.equal(u.facetScopeNote(200, 120), null); // loaded >= total (e.g. last page)
+});
+
+test('facetScopeNote is tolerant of bad/zero input', () => {
+  assert.equal(u.facetScopeNote(0, 0), null);
+  assert.equal(u.facetScopeNote(null, null), null);
+  assert.equal(u.facetScopeNote('x', 'y'), null);
+});
+
+/* ---------------------------- scopeFromInput ------------------------------ */
+// The search-box scope dropdown auto-blanks when the user types a recognized
+// `field:` token (the inline filter now governs), and reverts to 'Everything'
+// when no such token is present. scopeFromInput decides which it should show,
+// given the current text and the list of recognized field names.
+
+const FIELDS = ['title', 'subject', 'creator', 'description', 'language', 'mediatype', 'date', 'collection', 'identifier'];
+
+test('scopeFromInput returns Everything for plain text (no field token)', () => {
+  assert.equal(u.scopeFromInput('black cats', FIELDS), 'Everything');
+  assert.equal(u.scopeFromInput('', FIELDS), 'Everything');
+  assert.equal(u.scopeFromInput('   ', FIELDS), 'Everything');
+});
+
+test('scopeFromInput blanks when a recognized field token is present', () => {
+  assert.equal(u.scopeFromInput('title:kokoro', FIELDS), '');
+  assert.equal(u.scopeFromInput('soseki creator:twain', FIELDS), '');
+  // mid-typing: as soon as "subject:" appears, blank it.
+  assert.equal(u.scopeFromInput('subject:', FIELDS), '');
+});
+
+test('scopeFromInput is case-insensitive on the field name', () => {
+  assert.equal(u.scopeFromInput('Title:Kokoro', FIELDS), '');
+});
+
+test('scopeFromInput ignores unknown field-like tokens', () => {
+  // foo: is not a recognized field, so the dropdown stays on Everything.
+  assert.equal(u.scopeFromInput('foo:bar baz', FIELDS), 'Everything');
+  assert.equal(u.scopeFromInput('http://example.com', FIELDS), 'Everything');
+});

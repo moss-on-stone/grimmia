@@ -142,7 +142,7 @@ test('loadQueue returns an empty queue (no throw) on corrupt JSON', () => {
   }
 });
 
-test('saveQueue writes queue.json owner-only (0600)', () => {
+test('saveQueue writes queue.json owner-only (0600)', { skip: process.platform === 'win32' ? 'POSIX mode bits not supported on Windows (NTFS uses ACLs)' : false }, () => {
   const { store, home, cleanup } = freshStore();
   try {
     store.saveQueue({ jobs: [{ jobId: 'a' }] });

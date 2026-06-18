@@ -209,10 +209,14 @@
    * whitespace; returns '' when there's no usable screenname (e.g. only an
    * email is known).
    */
-  function userProfileUrl(screenname) {
-    const name = String(screenname == null ? '' : screenname).trim().replace(/^@+/, '');
-    if (!name) return '';
-    return `https://archive.org/details/@${encodeURIComponent(name)}`;
+  function userProfileUrl(slug) {
+    const name = String(slug == null ? '' : slug).trim().replace(/^@+/, '');
+    // Only a VALID account slug (ASCII letters/digits/._-) yields a link. The
+    // display screenname can be CJK/spaced (e.g. 石上苔), which is NOT a profile
+    // slug and would 400 at /details/@石上苔 — return '' so the caller shows a
+    // non-clickable name instead of a broken link.
+    if (!name || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) return '';
+    return `https://archive.org/details/@${name}`;
   }
 
   /**
@@ -275,6 +279,121 @@
     return 'Everything';
   }
 
+  /**
+   * Desired state of the BASIC search controls (search box, scope dropdown, year
+   * boxes) given whether the Advanced panel is expanded. Opening Advanced
+   * disables AND clears them (so stale basic input can't silently mix into the
+   * advanced query); collapsing re-enables them but does NOT restore the cleared
+   * values (the user deliberately switched to advanced).
+   *
+   * @param {boolean} advancedOpen whether the Advanced panel is showing
+   * @returns {{disabled: boolean, clear: boolean}}
+   */
+  function basicControlsUpdate(advancedOpen) {
+    return { disabled: !!advancedOpen, clear: !!advancedOpen };
+  }
+
+  /**
+   * Render milliseconds remaining as "m:ss" for the overload auto-resume
+   * countdown. Negative/NaN → "0:00". Partial seconds round UP so the display
+   * never hits 0:00 while still waiting.
+   */
+  function formatCountdown(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return '0:00';
+    const totalSec = Math.ceil(n / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  /**
+   * Map the broadcast `overload` block to the Transfers alert's display state.
+   * `null` (gate open) → hidden. 'pause' → manual Resume, no countdown. 'delay'
+   * → "Resume now" + a live countdown to resumeAt.
+   *
+   * @param {{mode:'pause'|'delay', resumeAt:number|null, reason:string}|null} overload
+   * @returns {{visible:boolean, title?:string, message?:string, showCountdown?:boolean, buttonLabel?:string}}
+   */
+  function overloadAlertView(overload) {
+    if (!overload || !overload.mode) return { visible: false };
+    const message = overload.reason || 'Server appears to be overloaded or down.';
+    if (overload.mode === 'pause') {
+      return { visible: true, title: 'Transfers paused', message, showCountdown: false, buttonLabel: 'Resume' };
+    }
+    // 'delay'
+    return {
+      visible: true,
+      title: 'Server overloaded — auto-resuming',
+      message,
+      showCountdown: true,
+      buttonLabel: 'Resume now',
+    };
+  }
+
+  /**
+   * Startup banner text offering to resume transfers left unfinished by a
+   * previous session (Phase 2). Empty string when there are none (banner hidden).
+   *
+   * @param {Array<{jobId,kind,label,count}>} summaries
+   */
+  function resumeOfferText(summaries) {
+    const n = Array.isArray(summaries) ? summaries.length : 0;
+    if (!n) return '';
+    const noun = n === 1 ? 'transfer' : 'transfers';
+    return `Resume ${n} unfinished ${noun} from your last session?`;
+  }
+
+  /**
+   * Map persisted resume descriptors to an executable plan (Phase 2). Pure: the
+   * renderer just runs each plan (createJobCard + the named window.ia.* call).
+   * Uploads/bulk are marked `skipped` when logged out (they need a session and
+   * stay persisted for a later launch); unknown kinds are dropped.
+   *
+   * @param {Array} jobs persisted descriptors
+   * @param {{loggedIn:boolean}} ctx
+   * @returns {Array<{channel,startArgs,card:{jobId,label,count,kind},skipped:boolean}>}
+   */
+  function planResumeReissue(jobs, { loggedIn } = {}) {
+    const out = [];
+    for (const d of jobs || []) {
+      if (!d) continue;
+      const isUpload = d.kind === 'upload' || d.kind === 'bulk';
+      const skipped = isUpload && !loggedIn;
+      if (d.kind === 'download') {
+        out.push({
+          channel: 'download.start',
+          startArgs: { jobId: d.jobId, items: d.items, prefs: d.prefs, destRoot: d.destRoot, label: d.label },
+          card: { jobId: d.jobId, label: d.label || 'download', count: 0, kind: 'download' },
+          skipped: false,
+        });
+      } else if (d.kind === 'collection') {
+        out.push({
+          channel: 'download.collection',
+          startArgs: { jobId: d.jobId, collection: d.collection, prefs: d.prefs, destRoot: d.destRoot, maxItems: d.maxItems },
+          card: { jobId: d.jobId, label: d.label || `Collection: ${d.collection}`, count: 0, kind: 'download' },
+          skipped: false,
+        });
+      } else if (d.kind === 'upload') {
+        out.push({
+          channel: 'upload.start',
+          startArgs: { jobId: d.jobId, identifier: d.identifier, files: d.files, metadata: d.metadata, derive: d.derive },
+          card: { jobId: d.jobId, label: d.identifier, count: (d.files || []).length, kind: 'upload' },
+          skipped,
+        });
+      } else if (d.kind === 'bulk') {
+        out.push({
+          channel: 'bulk.upload',
+          startArgs: { jobId: d.jobId, plan: d.plan, derive: d.derive },
+          card: { jobId: d.jobId, label: d.label || `Bulk upload (${(d.plan || []).length} items)`, count: (d.plan || []).length, kind: 'upload' },
+          skipped,
+        });
+      }
+      // unknown kind → dropped
+    }
+    return out;
+  }
+
   /** Escape text for safe insertion as HTML text content. */
   function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -304,6 +423,11 @@
     largeCollectionWarning,
     facetScopeNote,
     scopeFromInput,
+    basicControlsUpdate,
+    formatCountdown,
+    overloadAlertView,
+    resumeOfferText,
+    planResumeReissue,
     UPLOAD_LANGUAGES,
   };
 });

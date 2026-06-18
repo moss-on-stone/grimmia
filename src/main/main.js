@@ -27,8 +27,11 @@ const { buildAdvancedQuery, parseSearchInput } = require('./ia-query');
 const { FORMAT_PRESETS } = require('./download-prefs');
 const { DEFAULT_PREFS, normalizePrefs, nextZoomLevel } = require('../shared/view-prefs');
 const { validateIdentifier } = require('./ipc-validate');
-const { handleDownloadStart } = require('./ipc-handlers');
+const { handleDownloadStart, handleUploadStart, handleBulkUpload } = require('./ipc-handlers');
 const { createTransferQueue } = require('./transfer-queue');
+const { createPauseGate } = require('./pause-gate');
+const { createOverloadController, shouldReopenGateOnDrain } = require('./overload-policy');
+const queueStore = require('./queue-store');
 const { isDevFromArgv, resolveScreenshotPath, isSelfTest, resolveDemo } = require('./cli-args');
 const { isAllowedExternalUrl, isAllowedOpenPath } = require('./security');
 const csv = require('./csv');
@@ -69,19 +72,57 @@ const transferQueue = createTransferQueue();
 // without re-deriving it. Keyed by jobId; cleaned up when the job ends.
 const jobMeta = new Map();
 
+// Server-overload resilience: a shared pause gate the transfer runner awaits
+// before each item, plus a controller that escalates to pause/delay after a run
+// of transient failures. Transfers run one-at-a-time (concurrency 1), so the
+// active runner is the one that blocks at the gate; queued jobs are held by the
+// transfer queue behind it. The gate stays closed until resume()/the delay timer.
+const pauseGate = createPauseGate();
+const overload = createOverloadController({
+  gate: pauseGate,
+  getPrefs: () => normalizePrefs(store.loadSettings()),
+  broadcast: () => broadcastQueueDepth(),
+});
+
+// Phase 2 — persist each in-progress transfer's descriptor to queue.json so an
+// app crash/restart can offer to resume it. Persisted on start; removed on
+// success or user discard/cancel (a crash leaves it pending → offered next launch).
+function persistJob(descriptor) {
+  try {
+    store.saveQueue(queueStore.upsertJob(store.loadQueue(), descriptor));
+  } catch (err) {
+    logger.warn('queue: failed to persist job', { jobId: descriptor && descriptor.jobId, reason: err.message });
+  }
+}
+function forgetJob(jobId) {
+  try {
+    store.saveQueue(queueStore.removeJob(store.loadQueue(), jobId));
+  } catch (err) {
+    logger.warn('queue: failed to forget job', { jobId, reason: err.message });
+  }
+}
+// Pending jobs loaded from a previous session, offered to the renderer on startup.
+let pendingResumeJobs = [];
+
 let mainWindow = null;
 
 /** Broadcast the transfer queue (active + ordered waiting) so the renderer can
- *  badge the count and render/realign the queued cards. */
+ *  badge the count and render/realign the queued cards. Includes the overload
+ *  block (mode + resumeAt) when the gate is closed, so the renderer can show the
+ *  paused/auto-resuming alert. */
 function broadcastQueueDepth() {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
   const snap = transferQueue.snapshot();
   const describe = (id) => ({ jobId: id, ...(jobMeta.get(id) || {}) });
+  const gs = pauseGate.state();
   mainWindow.webContents.send('transfer:queue', {
     downloads: downloadJobs.size,
     uploads: uploadJobs.size,
     active: snap.active ? describe(snap.active) : null,
     waiting: snap.waiting.map(describe),
+    overload: pauseGate.isOpen()
+      ? null
+      : { mode: gs.mode, resumeAt: gs.resumeAt, reason: 'Server appears to be overloaded or down.' },
   });
 }
 
@@ -103,11 +144,17 @@ async function enterTransferQueue(jobId, meta, send) {
   return acquirePromise;
 }
 
-/** Leave the queue: run the release, drop metadata, and re-broadcast. */
+/** Leave the queue: run the release, drop metadata, and re-broadcast. If the
+ *  queue has fully drained, reopen the pause gate so a stale overload pause
+ *  (e.g. left closed after the active job was cancelled) can't strand future
+ *  transfers (review HIGH #1). */
 function leaveTransferQueue(jobId, release) {
   if (release) release();
   transferQueue.remove(jobId); // no-op if it was the active job
   jobMeta.delete(jobId);
+  if (!pauseGate.isOpen() && shouldReopenGateOnDrain(transferQueue.snapshot())) {
+    pauseGate.resume();
+  }
   broadcastQueueDepth();
 }
 
@@ -158,6 +205,17 @@ function createWindow() {
     mainWindow.webContents.once('did-finish-load', () =>
       mainWindow.webContents.openDevTools({ mode: 'detach' })
     );
+  }
+
+  // Phase 2: once the renderer is ready, offer to resume any transfers left
+  // unfinished by a previous session. Skipped in self-test/screenshot modes so it
+  // never interferes with the headless harness.
+  if (!selfTest && !screenshotPath) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      if (pendingResumeJobs.length && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('transfer:resume-offer', pendingResumeJobs.map(queueStore.jobSummary));
+      }
+    });
   }
 
   // Headless self-test (`electron . --dev --selftest`): the renderer drives its
@@ -250,7 +308,9 @@ function buildMenu() {
 /* ------------------------------- IPC: auth -------------------------------- */
 
 ipcMain.handle('auth:status', async () => {
-  return creds ? { loggedIn: true, screenname: creds.screenname, email: creds.email } : { loggedIn: false };
+  return creds
+    ? { loggedIn: true, screenname: creds.screenname, itemname: creds.itemname, email: creds.email }
+    : { loggedIn: false };
 });
 
 ipcMain.handle('auth:login', async (_e, { email, password }) => {
@@ -259,7 +319,7 @@ ipcMain.handle('auth:login', async (_e, { email, password }) => {
     creds = result;
     store.saveCredentials(result);
     logger.info('auth: login ok', { screenname: result.screenname });
-    return { loggedIn: true, screenname: result.screenname, email: result.email };
+    return { loggedIn: true, screenname: result.screenname, itemname: result.itemname, email: result.email };
   } catch (err) {
     logger.warn('auth: login failed', { reason: err.message });
     throw err;
@@ -403,6 +463,7 @@ ipcMain.handle('download:start', async (event, { jobId, items, prefs, destRoot, 
     if (!event.sender.isDestroyed()) event.sender.send('download:progress', { jobId, ...payload });
   };
   const labelText = label || (items && items[0] && items[0].identifier) || 'download';
+  persistJob(queueStore.describeDownloadJob({ jobId, items, prefs, destRoot, label: labelText }));
   const release = await enterTransferQueue(jobId, { kind: 'download', label: labelText }, send);
   try {
     // Cancelled while waiting in the queue — don't start the transfer.
@@ -410,9 +471,13 @@ ipcMain.handle('download:start', async (event, { jobId, items, prefs, destRoot, 
       send({ phase: 'error', message: 'Cancelled.' });
       return { ok: false, error: 'Cancelled.' };
     }
-    return await handleDownloadStart({ items, prefs, destRoot, signal: controller.signal }, { ia, send });
+    return await handleDownloadStart({ items, prefs, destRoot, signal: controller.signal }, { ia, send, overload });
   } finally {
     downloadJobs.delete(jobId);
+    // If the handler RETURNED at all (success, cancel, or handled failure), the
+    // process didn't crash — so there's nothing to resume; drop the persisted
+    // descriptor. Only an actual crash skips this finally and leaves it pending.
+    forgetJob(jobId);
     leaveTransferQueue(jobId, release);
   }
 });
@@ -428,7 +493,9 @@ ipcMain.handle('collection:download', async (event, { jobId, collection, prefs, 
   const send = (payload) => {
     if (!event.sender.isDestroyed()) event.sender.send('download:progress', { jobId, ...payload });
   };
-  const release = await enterTransferQueue(jobId, { kind: 'download', label: `Collection: ${collection}` }, send);
+  const collLabel = `Collection: ${collection}`;
+  persistJob(queueStore.describeCollectionJob({ jobId, collection, prefs, destRoot, maxItems, label: collLabel }));
+  const release = await enterTransferQueue(jobId, { kind: 'download', label: collLabel }, send);
   try {
     if (controller.signal.aborted) {
       send({ phase: 'error', message: 'Cancelled.' });
@@ -447,13 +514,14 @@ ipcMain.handle('collection:download', async (event, { jobId, collection, prefs, 
       return { ok: false, error: 'Empty collection.' };
     }
     const items = ids.map((identifier) => ({ identifier }));
-    return await handleDownloadStart({ items, prefs, destRoot, signal: controller.signal }, { ia, send });
+    return await handleDownloadStart({ items, prefs, destRoot, signal: controller.signal }, { ia, send, overload });
   } catch (err) {
     logger.error('collection: download error', { collection, reason: err.message });
     send({ phase: 'error', message: err.message });
     return { ok: false, error: err.message };
   } finally {
     downloadJobs.delete(jobId);
+    forgetJob(jobId); // returned (any outcome) ⇒ no crash ⇒ nothing to resume
     leaveTransferQueue(jobId, release);
   }
 });
@@ -469,6 +537,31 @@ ipcMain.handle('download:cancel', async (_e, { jobId }) => {
 ipcMain.handle('transfer:reorder', async (_e, { jobId, toIndex }) => {
   transferQueue.move(jobId, toIndex);
   broadcastQueueDepth();
+  return { ok: true };
+});
+
+// Manually resume transfers after a server-overload pause/delay (the alert's
+// "Resume" / "Resume now" button). Opens the gate immediately.
+ipcMain.handle('transfer:resume', async () => {
+  pauseGate.resume();
+  broadcastQueueDepth();
+  return { ok: true };
+});
+
+// Phase 2: the renderer accepted the resume offer — return the FULL pending
+// descriptors so it can re-issue each via the normal start path (reusing the
+// persisted jobId). The renderer drives re-issue; main can't (handlers need the
+// renderer's event.sender for progress).
+ipcMain.handle('transfer:resume-jobs', async () => {
+  const jobs = pendingResumeJobs;
+  pendingResumeJobs = []; // consumed — the renderer re-issues (and re-persists) them
+  return jobs;
+});
+
+// Phase 2: the user discarded the resume offer — drop the persisted queue.
+ipcMain.handle('transfer:discard-queue', async () => {
+  store.clearQueue();
+  pendingResumeJobs = [];
   return { ok: true };
 });
 
@@ -491,6 +584,7 @@ ipcMain.handle('upload:start', async (event, { jobId, identifier, files, metadat
     if (!event.sender.isDestroyed()) event.sender.send('upload:progress', { jobId, ...payload });
   };
   // Serialize against downloads AND other uploads — one transfer at a time.
+  persistJob(queueStore.describeUploadJob({ jobId, identifier, files, metadata, derive }));
   const release = await enterTransferQueue(jobId, { kind: 'upload', label: identifier }, send);
   try {
     if (controller.signal.aborted) {
@@ -498,35 +592,20 @@ ipcMain.handle('upload:start', async (event, { jobId, identifier, files, metadat
       return { ok: false, error: 'Cancelled.' };
     }
     validateIdentifier(identifier);
-    if (!Array.isArray(files) || files.length === 0) {
-      throw new ia.IAError('No files were provided to upload.');
-    }
-    logger.info('upload started', { identifier, files: files.length });
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      send({ phase: 'file-start', index: i, total: files.length, name: f.name });
-      await ia.uploadFile({
-        identifier,
-        filePath: f.path,
-        creds,
-        makeBucket: i === 0, // create item on first file, then add to it
-        metadata: i === 0 ? metadata : {},
-        derive,
-        signal: controller.signal,
-        onProgress: ({ sent, total }) =>
-          send({ phase: 'file-progress', index: i, total: files.length, name: f.name, sent, totalBytes: total }),
-      });
-      send({ phase: 'file-done', index: i, total: files.length, name: f.name });
-    }
-    logger.info('upload complete', { identifier });
-    send({ phase: 'complete', identifier });
-    return { ok: true, identifier };
+    // Files go through the shared retry queue so a transient 503/429 is retried
+    // (and honors Retry-After) instead of aborting the whole batch; consecutive
+    // transient failures escalate to the overload pause/delay gate.
+    return await handleUploadStart(
+      { identifier, files, metadata, derive, signal: controller.signal },
+      { ia, send, creds, overload }
+    );
   } catch (err) {
     logger.error('upload error', { identifier, reason: err.message });
     send({ phase: 'error', message: err.message });
     return { ok: false, error: err.message };
   } finally {
     uploadJobs.delete(jobId);
+    forgetJob(jobId); // returned (any outcome) ⇒ no crash ⇒ nothing to resume
     leaveTransferQueue(jobId, release);
   }
 });
@@ -577,49 +656,27 @@ ipcMain.handle('bulk:upload', async (event, { jobId, plan, derive }) => {
   const send = (payload) => {
     if (!event.sender.isDestroyed()) event.sender.send('upload:progress', { jobId, ...payload });
   };
-  const release = await enterTransferQueue(jobId, { kind: 'upload', label: `Bulk upload (${(plan || []).length} items)` }, send);
+  const bulkLabel = `Bulk upload (${(plan || []).length} items)`;
+  persistJob({ ...queueStore.describeBulkJob({ jobId, plan, derive }), label: bulkLabel });
+  const release = await enterTransferQueue(jobId, { kind: 'upload', label: bulkLabel }, send);
   try {
     if (controller.signal.aborted) {
       send({ phase: 'error', message: 'Cancelled.' });
       return { ok: false, error: 'Cancelled.' };
     }
-    if (!Array.isArray(plan) || !plan.length) throw new ia.IAError('The upload plan is empty.');
-    let itemNo = 0;
-    for (const item of plan) {
-      validateIdentifier(item.identifier);
-      const files = (item.files || []).filter((f) => f.exists);
-      if (!files.length) {
-        send({ phase: 'item-skip', identifier: item.identifier, message: 'no existing files' });
-        continue;
-      }
-      itemNo++;
-      send({ phase: 'item-start', identifier: item.identifier, index: itemNo, total: plan.length });
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        await ia.uploadFile({
-          identifier: item.identifier,
-          filePath: f.path,
-          creds,
-          makeBucket: i === 0,
-          metadata: i === 0 ? item.metadata || {} : {},
-          derive,
-          signal: controller.signal,
-          onProgress: ({ sent, total }) =>
-            send({ phase: 'file-progress', index: i, total: files.length, name: f.rel, sent, totalBytes: total }),
-        });
-      }
-      logger.info('bulk: item uploaded', { identifier: item.identifier, files: files.length });
-      send({ phase: 'item-done', identifier: item.identifier });
-    }
-    logger.info('bulk: upload complete', { items: itemNo });
-    send({ phase: 'complete', count: itemNo });
-    return { ok: true, count: itemNo };
+    // Each item's files go through the shared retry queue; the overload counter
+    // persists across items so a server going down mid-bulk escalates correctly.
+    return await handleBulkUpload(
+      { plan, derive, signal: controller.signal },
+      { ia, send, creds, overload, validateIdentifier }
+    );
   } catch (err) {
     logger.error('bulk: upload error', { reason: err.message });
     send({ phase: 'error', message: err.message });
     return { ok: false, error: err.message };
   } finally {
     uploadJobs.delete(jobId);
+    forgetJob(jobId); // returned (any outcome) ⇒ no crash ⇒ nothing to resume
     leaveTransferQueue(jobId, release);
   }
 });
@@ -675,6 +732,10 @@ app.whenReady().then(() => {
   applyLoggingPref();
   logger.info('app: ready', { version: app.getVersion(), isDev });
   creds = store.loadCredentials();
+  // Phase 2: load any transfers left unfinished by a previous session (crash or
+  // quit mid-transfer). They're offered to the renderer once it has loaded.
+  pendingResumeJobs = queueStore.pendingJobs(store.loadQueue());
+  if (pendingResumeJobs.length) logger.info('queue: pending transfers from a previous session', { count: pendingResumeJobs.length });
   buildMenu();
   createWindow();
   app.on('activate', () => {

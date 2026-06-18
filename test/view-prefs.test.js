@@ -146,6 +146,46 @@ test('normalizePrefs clamps downloadDelaySec to an integer in 0..99 (#16)', () =
   assert.equal(vp.normalizePrefs({}).downloadDelaySec, 5);
 });
 
+/* ----------------- server-overload resilience prefs ---------------------- */
+// When archive.org is overloaded/down past the per-item retries, the app
+// escalates to one of two behaviors after `overloadTries` consecutive items
+// fail transiently: 'delay' (wait overloadDelayMin then auto-resume) — the
+// default — or 'pause' (hold for a manual Resume).
+
+test('DEFAULT_PREFS defaults overload handling to delay/60min, threshold 5', () => {
+  assert.equal(vp.DEFAULT_PREFS.overloadMode, 'delay');
+  assert.equal(vp.DEFAULT_PREFS.overloadDelayMin, 60);
+  assert.equal(vp.DEFAULT_PREFS.overloadTries, 5);
+});
+
+test('OVERLOAD_MODES lists the two selectable behaviors', () => {
+  assert.deepEqual(vp.OVERLOAD_MODES, ['delay', 'pause']);
+});
+
+test('normalizePrefs validates overloadMode against the allowed set', () => {
+  assert.equal(vp.normalizePrefs({ overloadMode: 'pause' }).overloadMode, 'pause');
+  assert.equal(vp.normalizePrefs({ overloadMode: 'delay' }).overloadMode, 'delay');
+  assert.equal(vp.normalizePrefs({ overloadMode: 'nope' }).overloadMode, 'delay', 'invalid → default');
+  assert.equal(vp.normalizePrefs({}).overloadMode, 'delay');
+});
+
+test('normalizePrefs clamps overloadDelayMin to an integer in 1..1440', () => {
+  assert.equal(vp.normalizePrefs({ overloadDelayMin: 1 }).overloadDelayMin, 1);
+  assert.equal(vp.normalizePrefs({ overloadDelayMin: 1440 }).overloadDelayMin, 1440);
+  assert.equal(vp.normalizePrefs({ overloadDelayMin: 0 }).overloadDelayMin, 1, 'clamped low');
+  assert.equal(vp.normalizePrefs({ overloadDelayMin: 5000 }).overloadDelayMin, 1440, 'clamped high');
+  assert.equal(vp.normalizePrefs({ overloadDelayMin: 90.7 }).overloadDelayMin, 90, 'truncated to int');
+  assert.equal(vp.normalizePrefs({ overloadDelayMin: 'abc' }).overloadDelayMin, 60, 'invalid → default');
+});
+
+test('normalizePrefs clamps overloadTries to an integer in 1..50', () => {
+  assert.equal(vp.normalizePrefs({ overloadTries: 1 }).overloadTries, 1);
+  assert.equal(vp.normalizePrefs({ overloadTries: 50 }).overloadTries, 50);
+  assert.equal(vp.normalizePrefs({ overloadTries: 0 }).overloadTries, 1, 'clamped low');
+  assert.equal(vp.normalizePrefs({ overloadTries: 999 }).overloadTries, 50, 'clamped high');
+  assert.equal(vp.normalizePrefs({ overloadTries: '' }).overloadTries, 5, 'invalid → default');
+});
+
 test('DEFAULT_PREFS renames downloads to the item title by default (collision-safe)', () => {
   assert.equal(vp.DEFAULT_PREFS.rename, 'replace');
 });

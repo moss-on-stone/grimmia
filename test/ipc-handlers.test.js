@@ -16,7 +16,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { handleDownloadStart, sanitizeDir, sanitizeRel, boundedSaveAs } = require('../src/main/ipc-handlers');
+const { handleDownloadStart, handleUploadStart, handleBulkUpload, sanitizeDir, sanitizeRel, boundedSaveAs } = require('../src/main/ipc-handlers');
 
 // Keep logging out of the real userData during tests: point it at a throwaway
 // dir. (node --test runs each file in its own process, so this is isolated.)
@@ -743,4 +743,235 @@ test('a skipped file with NO published checksum is not verified (nothing to chec
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+/* ===================== upload resilience (overload) ======================= */
+// The old upload handlers aborted the ENTIRE batch on a single 503. Now uploads
+// go through the same runQueue retry path as downloads, and consecutive
+// transient failures escalate to the overload gate.
+
+/** Stub ia with a programmable uploadFile. `behavior(callIndex, args)` returns a
+ *  value (success) or throws (failure). Records every call's args. */
+function makeUploadIa(behavior) {
+  const calls = [];
+  return {
+    calls,
+    IAError: class IAError extends Error {
+      constructor(m, o = {}) {
+        super(m);
+        Object.assign(this, o);
+      }
+    },
+    uploadFile: async (args) => {
+      const idx = calls.length;
+      calls.push(args);
+      if (args.onProgress) args.onProgress({ sent: 1, total: 1 });
+      return behavior(idx, args); // may throw
+    },
+  };
+}
+
+// backoffDelay:()=>0 so retries don't actually wait in tests.
+const FAST = { backoffDelay: () => 0 };
+
+test('upload retries a transient 503 on one file, then succeeds (no batch abort)', async () => {
+  let firstFileTries = 0;
+  const ia = makeUploadIa((idx, args) => {
+    // First file 503s once, then succeeds; other files succeed immediately.
+    if (args.filePath === '/f1') {
+      firstFileTries++;
+      if (firstFileTries < 2) throw Object.assign(new Error('SlowDown'), { status: 503 });
+    }
+    return { identifier: args.identifier, remote: args.filePath, bytes: 1 };
+  });
+  const { send, phases } = makeSendSpy();
+  const res = await handleUploadStart(
+    { jobId: 'u1', identifier: 'my-item', files: [{ name: 'a', path: '/f1' }, { name: 'b', path: '/f2' }], metadata: { title: 'T' } },
+    { ia, send, queueOpts: FAST }
+  );
+  assert.equal(res.ok, true);
+  assert.ok(phases.some((p) => p.phase === 'file-retry'), 'emitted a file-retry');
+  assert.equal(phases.filter((p) => p.phase === 'file-done').length, 2, 'both files done');
+  assert.ok(phases.some((p) => p.phase === 'complete'));
+});
+
+test('upload: a file that keeps 503ing fails THAT file but the batch continues', async () => {
+  const ia = makeUploadIa((idx, args) => {
+    if (args.filePath === '/bad') throw Object.assign(new Error('SlowDown'), { status: 503 });
+    return { identifier: args.identifier, remote: args.filePath, bytes: 1 };
+  });
+  const { send, phases } = makeSendSpy();
+  const res = await handleUploadStart(
+    { jobId: 'u2', identifier: 'my-item', files: [{ name: 'ok', path: '/ok' }, { name: 'bad', path: '/bad' }], metadata: {} },
+    { ia, send, queueOpts: FAST }
+  );
+  // The good file still completed even though /bad never did.
+  assert.ok(phases.some((p) => p.phase === 'file-done' && p.name === 'ok'), 'good file finished');
+  assert.equal(res.ok, false, 'overall result flags the failure');
+});
+
+test('upload: makeBucket is true only for the first file, and on its retry', async () => {
+  let f0tries = 0;
+  const ia = makeUploadIa((idx, args) => {
+    if (idx === 0 && f0tries++ < 1) throw Object.assign(new Error('SlowDown'), { status: 503 });
+    return { identifier: args.identifier, remote: args.filePath, bytes: 1 };
+  });
+  const { send } = makeSendSpy();
+  await handleUploadStart(
+    { jobId: 'u3', identifier: 'my-item', files: [{ name: 'a', path: '/a' }, { name: 'b', path: '/b' }], metadata: {} },
+    { ia, send, queueOpts: FAST }
+  );
+  // Calls: [file0 attempt1 (makeBucket true), file0 retry (still true), file1 (false)]
+  const bucketFlags = ia.calls.map((c) => c.makeBucket);
+  assert.deepEqual(bucketFlags, [true, true, false], 'bucket-create only for index 0, preserved on retry');
+});
+
+test('upload: when the first file PERMANENTLY fails, the next file creates the bucket', () => {
+  // makeBucket must follow the first file that actually TRANSFERS, not list index
+  // 0 — otherwise files 1..n PUT to a never-created bucket and all fail.
+  let f0 = 0;
+  const ia = makeUploadIa((idx, args) => {
+    if (args.filePath === '/a') {
+      f0++;
+      throw Object.assign(new Error('SlowDown'), { status: 503 }); // file 0 never succeeds
+    }
+    return { identifier: args.identifier, remote: args.filePath, bytes: 1 };
+  });
+  const { send } = makeSendSpy();
+  return handleUploadStart(
+    { jobId: 'u5', identifier: 'my-item', files: [{ name: 'a', path: '/a' }, { name: 'b', path: '/b' }], metadata: { title: 'T' }, derive: false },
+    { ia, send, queueOpts: FAST }
+  ).then(() => {
+    // file 'b' is the first to transfer → it must create the bucket AND carry the metadata.
+    const bCall = ia.calls.find((c) => c.filePath === '/b');
+    assert.ok(bCall, 'file b was attempted');
+    assert.equal(bCall.makeBucket, true, 'the first successfully-transferring file creates the bucket');
+    assert.deepEqual(bCall.metadata, { title: 'T' }, 'metadata travels with the bucket-creating file');
+  });
+});
+
+test('upload waits on the overload gate before each file and reports failures to it', async () => {
+  const observed = [];
+  let waited = 0;
+  const overload = {
+    wait: async () => {
+      waited++;
+    },
+    observe: (e) => observed.push(e.type),
+  };
+  const ia = makeUploadIa((idx, args) => ({ identifier: args.identifier, remote: args.filePath, bytes: 1 }));
+  const { send } = makeSendSpy();
+  await handleUploadStart(
+    { jobId: 'u4', identifier: 'my-item', files: [{ name: 'a', path: '/a' }, { name: 'b', path: '/b' }], metadata: {} },
+    { ia, send, overload, queueOpts: FAST }
+  );
+  assert.equal(waited, 2, 'gate.wait() awaited before each file');
+  assert.ok(observed.includes('done'), 'overload.observe saw the queue events');
+});
+
+test('bulk upload retries transient failures per file and keeps going across items', async () => {
+  let bad = 0;
+  const ia = makeUploadIa((idx, args) => {
+    if (args.filePath === '/i1f1' && bad++ < 1) throw Object.assign(new Error('SlowDown'), { status: 503 });
+    return { identifier: args.identifier, remote: args.filePath, bytes: 1 };
+  });
+  const { send, phases } = makeSendSpy();
+  const plan = [
+    { identifier: 'item1', metadata: {}, files: [{ rel: 'f1', path: '/i1f1', exists: true }] },
+    { identifier: 'item2', metadata: {}, files: [{ rel: 'f2', path: '/i2f1', exists: true }] },
+  ];
+  const res = await handleBulkUpload({ jobId: 'b1', plan }, { ia, send, queueOpts: FAST, existsSync: () => true });
+  assert.equal(res.ok, true);
+  assert.equal(phases.filter((p) => p.phase === 'item-done').length, 2, 'both items completed');
+  assert.ok(phases.some((p) => p.phase === 'file-retry'), 'retried the transient failure');
+});
+
+test('bulk upload re-checks file existence at run time (stale exists from queue.json)', async () => {
+  // On crash-resume the persisted f.exists is from parse time. A file present NOW
+  // but recorded exists:false must still be uploaded (and vice-versa).
+  const ia = makeUploadIa((idx, args) => ({ identifier: args.identifier, remote: args.filePath, bytes: 1 }));
+  const { send, phases } = makeSendSpy();
+  const plan = [
+    { identifier: 'item1', metadata: {}, files: [{ rel: 'now-here', path: '/present', exists: false }] }, // stale false
+    { identifier: 'item2', metadata: {}, files: [{ rel: 'now-gone', path: '/absent', exists: true }] }, // stale true
+  ];
+  // Inject existence: only /present exists now.
+  const res = await handleBulkUpload(
+    { jobId: 'b3', plan },
+    { ia, send, queueOpts: FAST, existsSync: (p) => p === '/present' }
+  );
+  const uploaded = ia.calls.map((c) => c.filePath);
+  assert.ok(uploaded.includes('/present'), 'a now-present file is uploaded despite stale exists:false');
+  assert.ok(!uploaded.includes('/absent'), 'a now-absent file is skipped despite stale exists:true');
+  // item2 had no existing files now → item-skip.
+  assert.ok(phases.some((p) => p.phase === 'item-skip' && p.identifier === 'item2'));
+  assert.equal(res.ok, true);
+});
+
+test('bulk upload STOPS at the next item when cancelled mid-plan', async () => {
+  // Abort after the first item; the plan loop must not churn the remaining items.
+  const ac = new AbortController();
+  const ia = makeUploadIa((idx, args) => {
+    if (args.identifier === 'item1') ac.abort(); // cancel during/after item1
+    return { identifier: args.identifier, remote: args.filePath, bytes: 1 };
+  });
+  const { send, phases } = makeSendSpy();
+  const plan = [
+    { identifier: 'item1', metadata: {}, files: [{ rel: 'f1', path: '/a', exists: true }] },
+    { identifier: 'item2', metadata: {}, files: [{ rel: 'f2', path: '/b', exists: true }] },
+    { identifier: 'item3', metadata: {}, files: [{ rel: 'f3', path: '/c', exists: true }] },
+  ];
+  const res = await handleBulkUpload({ jobId: 'b2', plan, signal: ac.signal }, { ia, send, queueOpts: FAST, existsSync: () => true });
+  const started = phases.filter((p) => p.phase === 'item-start').map((p) => p.identifier);
+  assert.ok(!started.includes('item3'), 'must not start item3 after cancel');
+  assert.equal(res.ok, false, 'a cancelled bulk is not a success');
+  assert.match(res.error || '', /cancel/i);
+});
+
+test('bulk upload rejects an empty/non-array plan', async () => {
+  const ia = makeUploadIa(() => ({ bytes: 1 }));
+  const { send, phases } = makeSendSpy();
+  const res = await handleBulkUpload({ jobId: 'be', plan: [] }, { ia, send, queueOpts: FAST });
+  assert.equal(res.ok, false);
+  assert.ok(phases.some((p) => p.phase === 'error'), 'emits an error phase');
+});
+
+test('bulk upload item-skips an item whose files are all absent, and still completes others', async () => {
+  const ia = makeUploadIa((idx, args) => ({ identifier: args.identifier, remote: args.filePath, bytes: 1 }));
+  const { send, phases } = makeSendSpy();
+  const plan = [
+    { identifier: 'empty', metadata: {}, files: [{ rel: 'gone', path: '/gone', exists: true }] },
+    { identifier: 'real', metadata: {}, files: [{ rel: 'here', path: '/here', exists: true }] },
+  ];
+  const res = await handleBulkUpload({ jobId: 'bs', plan }, { ia, send, queueOpts: FAST, existsSync: (p) => p === '/here' });
+  assert.ok(phases.some((p) => p.phase === 'item-skip' && p.identifier === 'empty'));
+  assert.ok(phases.some((p) => p.phase === 'item-done' && p.identifier === 'real'));
+  assert.equal(res.ok, true);
+});
+
+test('bulk upload reports ok:false when an item has a persistently-failing file, but still completes + continues', async () => {
+  const ia = makeUploadIa((idx, args) => {
+    if (args.filePath === '/bad') throw Object.assign(new Error('SlowDown'), { status: 503 });
+    return { identifier: args.identifier, remote: args.filePath, bytes: 1 };
+  });
+  const { send, phases } = makeSendSpy();
+  const plan = [
+    { identifier: 'i1', metadata: {}, files: [{ rel: 'bad', path: '/bad', exists: true }] },
+    { identifier: 'i2', metadata: {}, files: [{ rel: 'ok', path: '/ok', exists: true }] },
+  ];
+  const res = await handleBulkUpload({ jobId: 'bf', plan }, { ia, send, queueOpts: FAST, existsSync: () => true });
+  assert.equal(res.ok, false, 'a failed file makes the bulk ok:false');
+  assert.equal(phases.filter((p) => p.phase === 'item-done').length, 2, 'both items still emit item-done');
+  assert.ok(phases.some((p) => p.phase === 'complete'), 'complete still fires');
+});
+
+test('handleUploadStart errors on an empty / missing file list', async () => {
+  const ia = makeUploadIa(() => ({ bytes: 1 }));
+  const a = makeSendSpy();
+  const r1 = await handleUploadStart({ jobId: 'e1', identifier: 'i', files: [], metadata: {} }, { ia, send: a.send, queueOpts: FAST });
+  assert.equal(r1.ok, false);
+  assert.ok(a.phases.some((p) => p.phase === 'error' && /no files/i.test(p.message)));
+  const b = makeSendSpy();
+  const r2 = await handleUploadStart({ jobId: 'e2', identifier: 'i', metadata: {} }, { ia, send: b.send, queueOpts: FAST });
+  assert.equal(r2.ok, false, 'missing files also errors');
 });

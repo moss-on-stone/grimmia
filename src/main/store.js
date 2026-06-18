@@ -54,6 +54,10 @@ const CREDS_FILE = () => path.join(userDataDir(), 'credentials.enc');
 // and owner-only permissions, used only when safeStorage is unavailable.
 const CREDS_PLAINTEXT_FILE = () => path.join(userDataDir(), 'credentials.plain.json');
 const SETTINGS_FILE = () => path.join(userDataDir(), 'settings.json');
+// In-progress transfer queue (Phase 2): job descriptors so unfinished
+// downloads/uploads can be offered for resume after a crash/restart. Plain JSON
+// (descriptors hold file paths/identifiers, not secrets).
+const QUEUE_FILE = () => path.join(userDataDir(), 'queue.json');
 
 function encryptionAvailable() {
   const ss = activeSafeStorage();
@@ -159,6 +163,32 @@ function updateSettings(patch) {
   return next;
 }
 
+/** Load the persisted transfer queue; missing/corrupt → an empty queue. */
+function loadQueue() {
+  try {
+    const q = JSON.parse(fs.readFileSync(QUEUE_FILE(), 'utf8'));
+    return q && Array.isArray(q.jobs) ? q : { jobs: [] };
+  } catch {
+    return { jobs: [] };
+  }
+}
+
+/** Persist the transfer queue (job descriptors only). Owner-only (0600): no
+ *  secrets, but it holds local file paths + user-authored metadata. */
+function saveQueue(queue) {
+  ensureDir();
+  fs.writeFileSync(QUEUE_FILE(), JSON.stringify(queue || { jobs: [] }, null, 2), { mode: 0o600 });
+}
+
+/** Remove the persisted queue file (no-op if absent). */
+function clearQueue() {
+  try {
+    fs.unlinkSync(QUEUE_FILE());
+  } catch {
+    /* none to remove */
+  }
+}
+
 module.exports = {
   userDataDir,
   saveCredentials,
@@ -167,6 +197,9 @@ module.exports = {
   loadSettings,
   saveSettings,
   updateSettings,
+  loadQueue,
+  saveQueue,
+  clearQueue,
   // Test-only seams (not used in production).
   __setSafeStorage,
   __setDataDir,

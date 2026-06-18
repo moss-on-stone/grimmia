@@ -23,6 +23,7 @@ const { URL } = require('node:url');
 
 const core = require('./ia-core');
 const { decideExisting } = require('./download-prefs');
+const { withRetry, isTransient } = require('./download-queue');
 const { IAError } = core;
 const { HOST, S3_HOST, USER_AGENT } = require('../shared/constants');
 
@@ -34,7 +35,9 @@ const { HOST, S3_HOST, USER_AGENT } = require('../shared/constants');
 // These return quickly in practice; a stalled one must not hang forever (C1).
 const DEFAULT_REQUEST_TIMEOUT_MS = 45000;
 
-async function request(method, url, { headers = {}, body, signal, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
+// One round-trip. Every outbound request to archive.org carries the descriptive
+// User-Agent (#compliance: identify the client on EVERY call).
+async function attemptRequest(method, url, { headers = {}, body, signal, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
   // C1: bound every request with a timeout, combined with the caller's signal
   // (so a cancel still aborts) when AbortSignal.any is available.
   let effectiveSignal = signal;
@@ -60,6 +63,28 @@ async function request(method, url, { headers = {}, body, signal, timeoutMs = DE
     }
   }
   return { ok: res.ok, status: res.status, headers: res.headers, text, json };
+}
+
+/**
+ * HTTP request to archive.org. GETs (search/metadata/scrape/tasks — all
+ * idempotent) are automatically retried on a transient 429/503/500, honoring the
+ * server's Retry-After, per archive.org's automated-access guidelines
+ * (#compliance). POSTs (login, metadata writes) are NOT auto-retried — they
+ * aren't idempotent. The retry is cancellation-aware: a caller `signal` abort
+ * skips further retries.
+ */
+async function request(method, url, opts = {}) {
+  const isGet = String(method).toUpperCase() === 'GET';
+  if (!isGet) return attemptRequest(method, url, opts);
+  return withRetry(() => attemptRequest(method, url, opts), {
+    // A non-ok response whose status is transient (429/503/500) is worth retrying.
+    shouldRetry: (r) => {
+      if (opts.signal && opts.signal.aborted) return false; // honor cancellation
+      return !r.ok && isTransient({ status: r.status });
+    },
+    getRetryAfter: (r) => (r.headers && r.headers.get ? r.headers.get('retry-after') : null),
+    maxRetries: 3,
+  });
 }
 
 /* --------------------------------------------------------------------------
@@ -234,7 +259,13 @@ function downloadFile({ url, destPath, expectedSize, onProgress, signal, force, 
 
       if (res.statusCode !== 200 && res.statusCode !== 206) {
         res.resume();
-        reject(new IAError(`Download failed (HTTP ${res.statusCode}) for ${path.basename(destPath)}.`, { status: res.statusCode }));
+        // Capture Retry-After on a throttle response so the retry layer honors it.
+        reject(
+          new IAError(`Download failed (HTTP ${res.statusCode}) for ${path.basename(destPath)}.`, {
+            status: res.statusCode,
+            retryAfter: res.headers['retry-after'],
+          })
+        );
         return;
       }
 
@@ -433,7 +464,9 @@ function uploadFile({
         if (res.statusCode >= 200 && res.statusCode < 300) {
           done(null, { identifier, remote, bytes: size });
         } else {
-          done(new IAError(`Upload failed (HTTP ${res.statusCode}) for ${remote}.`, { status: res.statusCode, body }));
+          // Carry status + Retry-After so a 503/429 is retried and honors
+          // archive.org's throttling (parity with the download path, #compliance).
+          done(core.uploadError(res.statusCode, res.headers, remote, body));
         }
       });
     });

@@ -34,10 +34,32 @@
     downloadSubfolders: false, // a folder per downloaded item? off = flat into the download folder (#5)
     downloadDelaySec: 5, // seconds to wait between downloading items, 0..99 (#16)
     reDownload: false, // re-download/overwrite files that already exist? off = skip them
+    // Server-overload resilience: after `overloadTries` consecutive items fail
+    // transiently (past their normal per-item retries), escalate. 'delay' waits
+    // `overloadDelayMin` minutes then auto-resumes (default); 'pause' holds for a
+    // manual Resume.
+    overloadMode: 'delay', // 'delay' | 'pause'
+    overloadDelayMin: 60, // minutes before auto-resume in 'delay' mode, 1..1440
+    overloadTries: 5, // consecutive exhausted-transient item failures → overload, 1..50
   });
 
   const DELAY_MIN = 0;
   const DELAY_MAX = 99;
+  const OVERLOAD_MODES = ['delay', 'pause'];
+  const DELAY_MIN_MINUTES = 1;
+  const DELAY_MAX_MINUTES = 1440; // 24h
+  const TRIES_MIN = 1;
+  const TRIES_MAX = 50;
+
+  /** Clamp `v` to an integer in [lo, hi]; non-finite or blank → `dflt`. (An empty
+   *  string coerces to 0 in JS, but a cleared field should mean "use the default",
+   *  not "0" — so blank strings are treated as invalid.) */
+  function clampInt(v, lo, hi, dflt) {
+    if (typeof v === 'string' && v.trim() === '') return dflt;
+    const n = Math.trunc(Number(v));
+    if (!Number.isFinite(n)) return dflt;
+    return Math.min(hi, Math.max(lo, n));
+  }
 
   /** Coerce a "truthy string"-aware boolean: 'false'/'0' → false, else Boolean(). */
   function coerceBool(v) {
@@ -72,6 +94,9 @@
     out.downloadSubfolders = coerceBool(out.downloadSubfolders); // (#5)
     out.downloadDelaySec = clampDelay(out.downloadDelaySec); // (#16)
     out.reDownload = coerceBool(out.reDownload);
+    if (!OVERLOAD_MODES.includes(out.overloadMode)) out.overloadMode = DEFAULT_PREFS.overloadMode;
+    out.overloadDelayMin = clampInt(out.overloadDelayMin, DELAY_MIN_MINUTES, DELAY_MAX_MINUTES, DEFAULT_PREFS.overloadDelayMin);
+    out.overloadTries = clampInt(out.overloadTries, TRIES_MIN, TRIES_MAX, DEFAULT_PREFS.overloadTries);
     out.perPage = PER_PAGE_OPTIONS.includes(Number(out.perPage)) ? Number(out.perPage) : DEFAULT_PREFS.perPage;
     out.formatText = TEXT_FORMATS.includes(out.formatText) ? out.formatText : DEFAULT_PREFS.formatText;
     out.formatOther = OTHER_FORMATS.includes(out.formatOther) ? out.formatOther : DEFAULT_PREFS.formatOther;
@@ -131,6 +156,9 @@
     PER_PAGE_OPTIONS,
     TEXT_FORMATS,
     OTHER_FORMATS,
+    OVERLOAD_MODES,
+    DELAY_MIN_MINUTES,
+    DELAY_MAX_MINUTES,
     normalizePrefs,
     resolveTheme,
     thumbnailUrl,

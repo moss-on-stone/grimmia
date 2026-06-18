@@ -10,6 +10,7 @@
  */
 
 const path = require('node:path');
+const fs = require('node:fs');
 
 const { resolveDownloadPlan, isRealFile, parsePatterns, formatForItem, sanitizeSegment, FORMAT_PRESETS } = require('./download-prefs');
 const { normalizePrefs } = require('../shared/view-prefs');
@@ -22,6 +23,10 @@ const logger = require('./logger');
 // (503 SlowDown), so we never download more than one file concurrently. The
 // queue is still used for its automatic retry/backoff on transient failures.
 const DOWNLOAD_CONCURRENCY = 1;
+
+// A no-op overload controller: gate always open, failures ignored. Production
+// (main.js) injects a real one backed by the pause gate + overload policy.
+const NOOP_OVERLOAD = { wait: async () => {}, observe: () => {} };
 
 // Short, user-facing names for format keys (for the fallback notice).
 const FORMAT_LABELS = {
@@ -182,7 +187,7 @@ async function buildWorkList(items, { formatText, formatOther, rename, include, 
  */
 async function handleDownloadStart(
   { items, prefs, destRoot, signal },
-  { ia, send, verify = verifyFile, log = logger, sleep = defaultSleep }
+  { ia, send, verify = verifyFile, log = logger, sleep = defaultSleep, overload = NOOP_OVERLOAD }
 ) {
   const np = normalizePrefs(prefs || {});
   // Two-dropdown format model: texts items use formatText (pdf/text_pdf/epub/
@@ -252,6 +257,8 @@ async function handleDownloadStart(
     let prevIdentifier = null;
 
     const runner = async (w, i) => {
+      // Hold here while the queue is paused/delayed for a server overload.
+      await overload.wait(signal);
       if (delayMs > 0 && prevIdentifier != null && w.identifier !== prevIdentifier) {
         await sleep(delayMs, signal);
         // H6: a cancel during the pause must stop here, not start the next item.
@@ -313,6 +320,7 @@ async function handleDownloadStart(
           log.warn('download: retrying file', { name: work[e.index].saveAs, attempt: e.attempt });
           send({ phase: 'file-retry', index: e.index, total, attempt: e.attempt, name: work[e.index].saveAs });
         }
+        overload.observe(e); // escalate to pause/delay on a run of transient failures
       },
     });
 
@@ -335,4 +343,186 @@ async function handleDownloadStart(
   }
 }
 
-module.exports = { sanitizeDir, sanitizeRel, boundedSaveAs, buildWorkList, handleDownloadStart };
+/* ============================ uploads (resilient) ========================= */
+
+/**
+ * Upload a single item's files, each through the shared retry queue so a
+ * transient 503/429 is retried (and honors Retry-After) instead of aborting the
+ * whole batch — the fix for "uploading 100+ items just crashes". Mirrors the
+ * download handler's dependency-injected shape.
+ *
+ * (The jobId lives in the IPC wrapper in main.js, not here — this body only
+ * needs the transfer payload.)
+ *
+ * @param {{identifier, files, metadata, derive, signal}} args
+ * @param {{ia, send, creds?, log?, overload?, queueOpts?}} deps  overload.wait(signal)
+ *   is awaited before each file; overload.observe(event) sees every queue event.
+ */
+async function handleUploadStart(
+  { identifier, files, metadata, derive, signal },
+  { ia, send, creds, log = logger, overload = NOOP_OVERLOAD, queueOpts = {} }
+) {
+  try {
+    validateUploadFileList(ia, files);
+    log.info('upload started', { identifier, files: files.length });
+    const total = files.length;
+
+    // The item is created by the FIRST file that actually transfers (and that PUT
+    // carries the metadata). Keying makeBucket to the list index instead would,
+    // if file 0 permanently failed, PUT files 1..n to a never-created bucket and
+    // fail them all. Concurrency is 1, so this flag is set sequentially.
+    let bucketCreated = false;
+    const runner = async (f, i) => {
+      await overload.wait(signal); // hold here while the queue is paused/delayed
+      const makeBucket = !bucketCreated; // stays true across retries of this same file
+      send({ phase: 'file-start', index: i, total, name: f.name });
+      await ia.uploadFile({
+        identifier,
+        filePath: f.path,
+        creds,
+        makeBucket,
+        metadata: makeBucket ? metadata : {},
+        derive,
+        signal,
+        onProgress: ({ sent, total: t }) => send({ phase: 'file-progress', index: i, total, name: f.name, sent, totalBytes: t }),
+      });
+      bucketCreated = true; // only after a successful transfer
+      send({ phase: 'file-done', index: i, total, name: f.name });
+      return { ok: true };
+    };
+
+    const results = await runQueue(files, runner, {
+      concurrency: 1,
+      maxRetries: 3,
+      signal,
+      onEvent: (e) => {
+        if (e.type === 'retry') {
+          log.warn('upload: retrying file', { name: files[e.index].name, attempt: e.attempt });
+          send({ phase: 'file-retry', index: e.index, total, attempt: e.attempt, name: files[e.index].name });
+        }
+        overload.observe(e); // escalate to pause/delay on a run of transient failures
+      },
+      ...queueOpts,
+    });
+
+    const failed = results.filter((r) => r && !r.ok);
+    if (failed.length) {
+      const first = failed[0].error;
+      log.error('upload: files failed', { identifier, failed: failed.length, reason: (first && first.message) || 'unknown' });
+      send({ phase: 'error', message: (first && first.message) || `${failed.length} file(s) failed to upload.` });
+      return { ok: false, error: (first && first.message) || 'Some files failed.' };
+    }
+
+    log.info('upload complete', { identifier });
+    send({ phase: 'complete', identifier });
+    return { ok: true, identifier };
+  } catch (err) {
+    log.error('upload error', { identifier, reason: err.message });
+    send({ phase: 'error', message: err.message });
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Run a parsed bulk plan: each item is a new IA upload; its files go through the
+ * same retry queue. The overload counter persists ACROSS plan items, so a server
+ * going down mid-bulk escalates correctly.
+ *
+ * @param {{plan, derive, signal}} args
+ * @param {{ia, send, log?, overload?, validateIdentifier?, queueOpts?}} deps
+ */
+async function handleBulkUpload(
+  { plan, derive, signal },
+  { ia, send, creds, log = logger, overload = NOOP_OVERLOAD, validateIdentifier = () => {}, queueOpts = {}, existsSync = fs.existsSync }
+) {
+  try {
+    if (!Array.isArray(plan) || !plan.length) throw new ia.IAError('The upload plan is empty.');
+    let itemNo = 0;
+    let anyFailed = false;
+    for (const item of plan) {
+      // Stop cleanly on cancel rather than churning the remaining items (each
+      // would emit a misleading item-start/item-done with no real work done).
+      if (signal && signal.aborted) {
+        send({ phase: 'error', message: 'Cancelled.' });
+        return { ok: false, error: 'Cancelled.' };
+      }
+      validateIdentifier(item.identifier);
+      // Re-check existence at run time, not the parse-time f.exists — on a
+      // crash-resume the persisted flag may be stale (a file added/removed since).
+      const files = (item.files || []).filter((f) => existsSync(f.path));
+      if (!files.length) {
+        send({ phase: 'item-skip', identifier: item.identifier, message: 'no existing files' });
+        continue;
+      }
+      itemNo++;
+      const total = files.length;
+      send({ phase: 'item-start', identifier: item.identifier, index: itemNo, total: plan.length });
+
+      // Create the item on the first file that actually transfers (see the same
+      // note in handleUploadStart) — not list index 0, which would doom files
+      // 1..n if file 0 failed permanently.
+      let bucketCreated = false;
+      const runner = async (f, i) => {
+        await overload.wait(signal);
+        const makeBucket = !bucketCreated;
+        await ia.uploadFile({
+          identifier: item.identifier,
+          filePath: f.path,
+          creds,
+          makeBucket,
+          metadata: makeBucket ? item.metadata || {} : {},
+          derive,
+          signal,
+          onProgress: ({ sent, total: t }) => send({ phase: 'file-progress', index: i, total, name: f.rel, sent, totalBytes: t }),
+        });
+        bucketCreated = true;
+        return { ok: true };
+      };
+
+      const results = await runQueue(files, runner, {
+        concurrency: 1,
+        maxRetries: 3,
+        signal,
+        onEvent: (e) => {
+          if (e.type === 'retry') {
+            log.warn('bulk: retrying file', { identifier: item.identifier, name: files[e.index].rel, attempt: e.attempt });
+            send({ phase: 'file-retry', index: e.index, total, attempt: e.attempt, name: files[e.index].rel });
+          }
+          overload.observe(e);
+        },
+        ...queueOpts,
+      });
+
+      if (results.some((r) => r && !r.ok)) {
+        anyFailed = true;
+        log.error('bulk: item had failed files', { identifier: item.identifier });
+      }
+      log.info('bulk: item uploaded', { identifier: item.identifier, files: files.length });
+      send({ phase: 'item-done', identifier: item.identifier });
+    }
+    log.info('bulk: upload complete', { items: itemNo, anyFailed });
+    send({ phase: 'complete', count: itemNo });
+    return { ok: !anyFailed, count: itemNo };
+  } catch (err) {
+    log.error('bulk: upload error', { reason: err.message });
+    send({ phase: 'error', message: err.message });
+    return { ok: false, error: err.message };
+  }
+}
+
+/** Validate the per-upload file list; throws an IAError on a bad/empty list. */
+function validateUploadFileList(ia, files) {
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new ia.IAError('No files were provided to upload.');
+  }
+}
+
+module.exports = {
+  sanitizeDir,
+  sanitizeRel,
+  boundedSaveAs,
+  buildWorkList,
+  handleDownloadStart,
+  handleUploadStart,
+  handleBulkUpload,
+};

@@ -107,3 +107,62 @@ test('plaintext credential fallback file is written with 0600 permissions (M7)',
     cleanup();
   }
 });
+
+/* -------------------------- queue persistence (Phase 2) ------------------- */
+// queue.json holds the in-progress transfer descriptors so unfinished work can
+// be offered for resume after a crash/restart. Plain JSON like settings.
+
+test('saveQueue/loadQueue round-trip the job descriptors', () => {
+  const { store, cleanup } = freshStore();
+  try {
+    const q = { jobs: [{ jobId: 'a', kind: 'download', status: 'pending', items: [{ identifier: 'x' }] }] };
+    store.saveQueue(q);
+    assert.deepEqual(store.loadQueue(), q);
+  } finally {
+    cleanup();
+  }
+});
+
+test('loadQueue returns an empty queue when the file is missing', () => {
+  const { store, cleanup } = freshStore();
+  try {
+    assert.deepEqual(store.loadQueue(), { jobs: [] });
+  } finally {
+    cleanup();
+  }
+});
+
+test('loadQueue returns an empty queue (no throw) on corrupt JSON', () => {
+  const { store, home, cleanup } = freshStore();
+  try {
+    fs.writeFileSync(path.join(home, 'queue.json'), '{ this is not json', 'utf8');
+    assert.deepEqual(store.loadQueue(), { jobs: [] });
+  } finally {
+    cleanup();
+  }
+});
+
+test('saveQueue writes queue.json owner-only (0600)', () => {
+  const { store, home, cleanup } = freshStore();
+  try {
+    store.saveQueue({ jobs: [{ jobId: 'a' }] });
+    const mode = fs.statSync(path.join(home, 'queue.json')).mode & 0o777;
+    assert.equal(mode, 0o600, `queue.json must be owner-only, got ${mode.toString(8)}`);
+  } finally {
+    cleanup();
+  }
+});
+
+test('clearQueue removes the queue file', () => {
+  const { store, home, cleanup } = freshStore();
+  try {
+    store.saveQueue({ jobs: [{ jobId: 'a' }] });
+    assert.ok(fs.existsSync(path.join(home, 'queue.json')));
+    store.clearQueue();
+    assert.ok(!fs.existsSync(path.join(home, 'queue.json')), 'queue.json removed');
+    // clearQueue on an already-absent file must not throw.
+    store.clearQueue();
+  } finally {
+    cleanup();
+  }
+});

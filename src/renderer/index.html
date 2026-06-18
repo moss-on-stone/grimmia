@@ -254,6 +254,19 @@
         </div>
         <p class="muted small">Transfers run one at a time — archive.org throttles parallel transfers, so a download and an upload never overlap.</p>
 
+        <!-- Phase 2: offer to resume transfers left unfinished by a previous
+             session (e.g. an app crash mid-download). -->
+        <div id="resume-banner" class="transfer-alert" hidden role="status" aria-live="polite">
+          <div class="alert-icon">↻</div>
+          <div class="alert-body">
+            <strong id="resume-banner-text">Resume unfinished transfers?</strong>
+          </div>
+          <div class="alert-actions">
+            <button id="resume-accept">Resume</button>
+            <button id="resume-discard" class="ghost">Discard</button>
+          </div>
+        </div>
+
         <h3 class="prefs-h transfer-h"><span class="dir-mark down">↓</span> Downloads</h3>
         <div id="downloads-list" class="jobs"></div>
         <div id="downloads-empty" class="empty">No downloads yet. Find an item and click Download.</div>
@@ -261,6 +274,20 @@
         <h3 class="prefs-h transfer-h"><span class="dir-mark up">↑</span> Uploads</h3>
         <div id="uploads-list" class="jobs"></div>
         <div id="uploads-empty" class="empty">No uploads yet. Create one from the Upload tab.</div>
+
+        <!-- Server-overload alert: shown when transfers are paused/delayed because
+             archive.org appears overloaded or down. -->
+        <div id="transfer-alert" class="transfer-alert" hidden role="status" aria-live="polite">
+          <div class="alert-icon">⏸</div>
+          <div class="alert-body">
+            <strong id="transfer-alert-title">Transfers paused</strong>
+            <p id="transfer-alert-msg" class="muted small"></p>
+          </div>
+          <div class="alert-actions">
+            <span id="transfer-alert-countdown" class="muted small" hidden></span>
+            <button id="transfer-resume" class="ghost">Resume now</button>
+          </div>
+        </div>
       </section>
 
       <!-- UPLOAD TAB -->
@@ -445,6 +472,24 @@
             Re-download files that already exist
           </label>
           <p class="muted small">Off by default: if a file with the same name is already in the download folder, it's assumed downloaded and skipped. Turn on to always re-download and overwrite existing files.</p>
+
+          <h3 class="prefs-h">When the server is overloaded</h3>
+          <label>
+            After repeated failures
+            <select id="pref-overload-mode">
+              <option value="delay">Wait, then auto-resume</option>
+              <option value="pause">Pause and let me resume</option>
+            </select>
+          </label>
+          <p class="muted small">archive.org is sometimes overloaded or briefly down. Each file is already retried automatically; if many in a row keep failing, the whole transfer queue holds rather than crashing. "Wait, then auto-resume" (the default) retries after the delay below; "Pause" holds until you click Resume.</p>
+          <label>
+            Wait before auto-resuming <span class="muted">(minutes, 1–1440)</span>
+            <input id="pref-overload-delay" type="number" min="1" max="1440" step="1" inputmode="numeric" />
+          </label>
+          <label>
+            Failures in a row before holding <span class="muted">(1–50)</span>
+            <input id="pref-overload-tries" type="number" min="1" max="50" step="1" inputmode="numeric" />
+          </label>
 
           <h3 class="prefs-h">Filename</h3>
           <label>

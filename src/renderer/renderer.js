@@ -142,10 +142,13 @@ async function refreshAuth() {
   if (s.loggedIn) {
     $('#login-view').hidden = true;
     $('#app').hidden = false;
-    // Clicking the username opens the account's archive.org profile page.
+    // Clicking the username opens the account's archive.org profile page. The
+    // profile lives at /details/@<itemname> (the URL slug) — NOT the display
+    // screenname, which may be CJK/spaced and would 400. Fall back to screenname
+    // only if it's itself a valid slug; otherwise the name is shown un-linked.
     const who = $('#who');
     who.textContent = s.screenname || s.email || '';
-    const profileUrl = uiUtil.userProfileUrl(s.screenname);
+    const profileUrl = uiUtil.userProfileUrl(s.itemname) || uiUtil.userProfileUrl(s.screenname);
     who.classList.toggle('who-link', !!profileUrl);
     who.title = profileUrl ? 'Open your archive.org profile' : '';
     who.onclick = profileUrl
@@ -931,10 +934,28 @@ async function refreshQueryPreview() {
   }
 }
 
+// The basic-search controls disabled/cleared while Advanced is open: the search
+// box, its scope dropdown, and the two year inputs to the left of the panel.
+const BASIC_SEARCH_CONTROLS = ['#search-input', '#search-scope', '#quick-date-from', '#quick-date-to'];
+
+/** Reflect the Advanced-panel open state onto the basic controls (disable+clear
+ *  on open; re-enable on close). Decision logic lives in uiUtil for testability. */
+function applyBasicControlsState(advancedOpen) {
+  const { disabled, clear } = uiUtil.basicControlsUpdate(advancedOpen);
+  for (const sel of BASIC_SEARCH_CONTROLS) {
+    const elm = $(sel);
+    if (!elm) continue;
+    elm.disabled = disabled;
+    if (clear) elm.value = sel === '#search-scope' ? 'Everything' : '';
+  }
+}
+
 $('#adv-toggle').addEventListener('click', () => {
   const panel = $('#adv-panel');
   panel.hidden = !panel.hidden;
   $('#adv-toggle').textContent = panel.hidden ? 'Advanced ▾' : 'Advanced ▴';
+  // Disable + clear the basic controls while Advanced is open; re-enable on close.
+  applyBasicControlsState(!panel.hidden);
   if (!panel.hidden) refreshQueryPreview();
 });
 
@@ -1609,6 +1630,111 @@ if (window.ia.transfer && window.ia.transfer.onQueue) {
     transferSnapshot = { active: (p && p.active) || null, waiting: (p && p.waiting) || [] };
     renderTransferBadge();
     reorderTransferCards();
+    renderTransferAlert((p && p.overload) || null);
+  });
+}
+
+// The live countdown interval for 'delay' mode (cleared/re-armed per snapshot).
+let overloadCountdownTimer = null;
+
+/**
+ * Show/hide the server-overload alert at the bottom of Transfers. `overload` is
+ * the broadcast block ({mode, resumeAt, reason}) or null when the gate is open.
+ * In 'delay' mode a 1s interval ticks the countdown to resumeAt. Decision logic
+ * (visibility/labels) is the pure uiUtil.overloadAlertView.
+ */
+function renderTransferAlert(overload) {
+  const alert = $('#transfer-alert');
+  if (!alert) return;
+  if (overloadCountdownTimer) {
+    clearInterval(overloadCountdownTimer);
+    overloadCountdownTimer = null;
+  }
+  const view = uiUtil.overloadAlertView(overload);
+  if (!view.visible) {
+    alert.hidden = true;
+    return;
+  }
+  alert.hidden = false;
+  $('#transfer-alert-title').textContent = view.title;
+  $('#transfer-alert-msg').textContent = view.message;
+  $('#transfer-resume').textContent = view.buttonLabel;
+  const cd = $('#transfer-alert-countdown');
+  if (view.showCountdown && overload.resumeAt) {
+    cd.hidden = false;
+    const tick = () => {
+      cd.textContent = `Auto-resuming in ${uiUtil.formatCountdown(overload.resumeAt - Date.now())}`;
+    };
+    tick();
+    overloadCountdownTimer = setInterval(tick, 1000);
+  } else {
+    cd.hidden = true;
+    cd.textContent = '';
+  }
+}
+
+if ($('#transfer-resume')) {
+  $('#transfer-resume').addEventListener('click', () => {
+    window.ia.transfer.resume().catch((e) => toast(e.message, 'err'));
+  });
+}
+
+/* ----------------- Phase 2: resume unfinished transfers ------------------- */
+// On startup, main offers any transfers left unfinished by a previous session.
+// We show a banner; Resume re-issues each via the SAME start path (reusing the
+// persisted jobId), Discard drops the persisted queue.
+if (window.ia.transfer && window.ia.transfer.onResumeOffer) {
+  window.ia.transfer.onResumeOffer((summaries) => {
+    const banner = $('#resume-banner');
+    if (!banner) return;
+    const text = uiUtil.resumeOfferText(summaries || []);
+    if (!text) {
+      banner.hidden = true;
+      return;
+    }
+    $('#resume-banner-text').textContent = text;
+    banner.hidden = false;
+  });
+}
+
+// Map a resume plan's channel string to the matching bridge call. The plan
+// (channel + startArgs + card + skipped) is computed by the pure, tested
+// uiUtil.planResumeReissue; this only executes it (card + IPC).
+const RESUME_CHANNELS = {
+  'download.start': (a) => window.ia.download.start(a),
+  'download.collection': (a) => window.ia.download.collection(a),
+  'upload.start': (a) => window.ia.upload.start(a),
+  'bulk.upload': (a) => window.ia.bulk.upload(a),
+};
+
+/** Execute one resume plan: recreate its card and re-invoke its start path. */
+function runResumePlan(p) {
+  const card = createJobCard(p.card.jobId, p.card.label, p.card.count, p.card.kind);
+  addJobCard(card, p.card.kind);
+  trackJobStart(p.card.kind);
+  const call = RESUME_CHANNELS[p.channel];
+  if (call) call(p.startArgs).catch((e) => toast(e.message, 'err'));
+}
+
+if ($('#resume-accept')) {
+  $('#resume-accept').addEventListener('click', async () => {
+    $('#resume-banner').hidden = true;
+    const jobs = (await window.ia.transfer.resumeJobs().catch(() => [])) || [];
+    const plans = uiUtil.planResumeReissue(jobs, { loggedIn });
+    // Uploads/bulk are skipped while logged out — they stay persisted for later.
+    if (plans.some((p) => p.skipped)) {
+      toast('Log in to resume uploads. Downloads are resuming now.', 'err');
+    }
+    for (const p of plans) {
+      if (!p.skipped) runResumePlan(p);
+    }
+  });
+}
+
+if ($('#resume-discard')) {
+  $('#resume-discard').addEventListener('click', () => {
+    $('#resume-banner').hidden = true;
+    window.ia.transfer.discardQueue().catch((e) => toast(e.message, 'err'));
   });
 }
 
@@ -1891,6 +2017,10 @@ async function initSettings() {
   $('#pref-subfolders').checked = prefs.downloadSubfolders; // #5
   $('#pref-download-delay').value = String(prefs.downloadDelaySec); // #16
   $('#pref-redownload').checked = prefs.reDownload; // skip vs re-download existing files
+  // Server-overload resilience prefs.
+  if ($('#pref-overload-mode')) $('#pref-overload-mode').value = prefs.overloadMode;
+  if ($('#pref-overload-delay')) $('#pref-overload-delay').value = String(prefs.overloadDelayMin);
+  if ($('#pref-overload-tries')) $('#pref-overload-tries').value = String(prefs.overloadTries);
   $('#pref-theme').value = prefs.theme;
   // #8: results-per-page (50/100/200) — normalized default is 200.
   ROWS = prefs.perPage;
@@ -2035,6 +2165,34 @@ $('#pref-download-delay').addEventListener('change', async (e) => {
   await window.ia.settings.update({ downloadDelaySec: clamped });
   flashSaved();
 });
+// Server-overload resilience prefs (clamp/validate on commit via normalizePrefs).
+if ($('#pref-overload-mode')) {
+  $('#pref-overload-mode').addEventListener('change', async (e) => {
+    const v = viewPrefs.normalizePrefs({ overloadMode: e.target.value }).overloadMode;
+    prefs.overloadMode = v;
+    e.target.value = v;
+    await window.ia.settings.update({ overloadMode: v });
+    flashSaved();
+  });
+}
+if ($('#pref-overload-delay')) {
+  $('#pref-overload-delay').addEventListener('change', async (e) => {
+    const v = viewPrefs.normalizePrefs({ overloadDelayMin: e.target.value }).overloadDelayMin;
+    prefs.overloadDelayMin = v;
+    e.target.value = String(v);
+    await window.ia.settings.update({ overloadDelayMin: v });
+    flashSaved();
+  });
+}
+if ($('#pref-overload-tries')) {
+  $('#pref-overload-tries').addEventListener('change', async (e) => {
+    const v = viewPrefs.normalizePrefs({ overloadTries: e.target.value }).overloadTries;
+    prefs.overloadTries = v;
+    e.target.value = String(v);
+    await window.ia.settings.update({ overloadTries: v });
+    flashSaved();
+  });
+}
 // #4: clear recent-search history / saved searches.
 $('#clear-recent-searches').addEventListener('click', async () => {
   await window.ia.settings.update({ recentSearches: [] });

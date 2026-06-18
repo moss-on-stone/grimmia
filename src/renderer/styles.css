@@ -424,6 +424,17 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono",
 
 /* ----------------------- Transfers: downloads vs uploads ----------------- */
 .transfer-h { display: flex; align-items: center; gap: 8px; }
+/* Server-overload alert pinned at the bottom of Transfers (warn-colored). */
+.transfer-alert {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 16px; padding: 12px 14px;
+  border: 1px solid var(--warn); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warn) 12%, var(--bg-elev));
+}
+.transfer-alert .alert-icon { font-size: 20px; line-height: 1; }
+.transfer-alert .alert-body { flex: 1 1 auto; min-width: 0; }
+.transfer-alert .alert-body p { margin: 2px 0 0; }
+.transfer-alert .alert-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 .job .job-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 /* #4: a colored left accent + direction arrow distinguishes the two types. */
 .job-download { border-left: 3px solid var(--download); }

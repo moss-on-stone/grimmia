@@ -259,3 +259,50 @@ test('modifyMetadata authenticates via the Authorization header, not form fields
     f.restore();
   }
 });
+
+/* ----------------- retry/backoff on transient GET (compliance) ------------ */
+// archive.org guidelines: honor 429/503. A GET search that 503s once must be
+// retried automatically and then succeed — without the caller seeing the blip.
+
+test('search retries a transient 503 GET and then succeeds', async () => {
+  let n = 0;
+  const f = installFakeFetch([
+    {
+      method: 'GET',
+      url: '/advancedsearch.php',
+      response: () => {
+        n++;
+        if (n === 1) return { status: 503, text: 'SlowDown' }; // first try throttled
+        return { json: { response: { numFound: 1, start: 0, docs: [{ identifier: 'x' }] } } };
+      },
+    },
+  ]);
+  try {
+    const res = await ia.search('anything');
+    assert.equal(n, 2, 'one retry after the 503');
+    assert.equal(res.numFound, 1);
+    assert.equal(res.docs[0].identifier, 'x');
+  } finally {
+    f.restore();
+  }
+});
+
+test('a POST (login) is NOT auto-retried on a 503 (non-idempotent)', async () => {
+  let n = 0;
+  const f = installFakeFetch([
+    {
+      method: 'POST',
+      url: '/services/xauthn/',
+      response: () => {
+        n++;
+        return { status: 503, text: 'SlowDown' };
+      },
+    },
+  ]);
+  try {
+    await assert.rejects(ia.login('a@b.c', 'pw'));
+    assert.equal(n, 1, 'POST must not be retried');
+  } finally {
+    f.restore();
+  }
+});

@@ -200,11 +200,15 @@ test('largeCollectionWarning honors a custom threshold', () => {
 });
 
 /* ----------------------------- userProfileUrl ----------------------------- */
-// Clicking the logged-in username opens that account's archive.org profile,
-// which lives at https://archive.org/details/@<screenname>.
+// Clicking the logged-in username opens that account's archive.org profile at
+// https://archive.org/details/@<slug>. The slug must be a VALID account
+// identifier (ASCII letters/digits/._-) — the xauthn `itemname`, NOT the display
+// `screenname`. A CJK/spaced display name (e.g. 石上苔) is NOT a slug and would
+// 400, so we return '' (renderer then shows a non-clickable name).
 
-test('userProfileUrl builds the @screenname profile URL', () => {
+test('userProfileUrl builds the @slug profile URL for a valid slug', () => {
   assert.equal(u.userProfileUrl('konrad'), 'https://archive.org/details/@konrad');
+  assert.equal(u.userProfileUrl('stone-on_moss.1'), 'https://archive.org/details/@stone-on_moss.1');
 });
 
 test('userProfileUrl tolerates a leading @ and trims whitespace', () => {
@@ -212,14 +216,156 @@ test('userProfileUrl tolerates a leading @ and trims whitespace', () => {
   assert.equal(u.userProfileUrl('  konrad  '), 'https://archive.org/details/@konrad');
 });
 
-test('userProfileUrl encodes the screenname', () => {
-  assert.equal(u.userProfileUrl('a b'), 'https://archive.org/details/@a%20b');
+test('userProfileUrl returns empty for a non-slug display name (the 400 bug)', () => {
+  // CJK display name → not a valid account slug → no link (was /details/@石上苔 = 400).
+  assert.equal(u.userProfileUrl('石上苔'), '');
+  // Spaces are not valid in an account slug either.
+  assert.equal(u.userProfileUrl('a b'), '');
 });
 
-test('userProfileUrl returns empty for a missing screenname (e.g. only an email)', () => {
+test('userProfileUrl returns empty for a missing slug (e.g. only an email)', () => {
   assert.equal(u.userProfileUrl(''), '');
   assert.equal(u.userProfileUrl(null), '');
   assert.equal(u.userProfileUrl('@'), '');
+});
+
+/* -------------------------- basicControlsUpdate --------------------------- */
+// When the Advanced panel is expanded, the basic search box + scope dropdown +
+// year boxes to its left are disabled AND cleared (they'd otherwise silently mix
+// into / conflict with the advanced query). Collapsing the panel re-enables them
+// (we don't restore the cleared values — the user moved to advanced on purpose).
+
+test('basicControlsUpdate disables and clears the basic controls when Advanced opens', () => {
+  assert.deepEqual(u.basicControlsUpdate(true), { disabled: true, clear: true });
+});
+
+test('basicControlsUpdate re-enables (without clearing) when Advanced closes', () => {
+  assert.deepEqual(u.basicControlsUpdate(false), { disabled: false, clear: false });
+});
+
+/* ----------------------------- formatCountdown ---------------------------- */
+// Renders ms remaining until auto-resume as "m:ss" for the overload alert.
+
+test('formatCountdown renders minutes:seconds', () => {
+  assert.equal(u.formatCountdown(0), '0:00');
+  assert.equal(u.formatCountdown(65000), '1:05');
+  assert.equal(u.formatCountdown(3600000), '60:00');
+  assert.equal(u.formatCountdown(5000), '0:05');
+});
+
+test('formatCountdown clamps negative/NaN to 0:00 and rounds up partial seconds', () => {
+  assert.equal(u.formatCountdown(-1000), '0:00');
+  assert.equal(u.formatCountdown('nope'), '0:00');
+  // 1500ms should read as 0:02 (ceil) so the countdown never shows 0:00 while waiting.
+  assert.equal(u.formatCountdown(1500), '0:02');
+});
+
+/* ----------------------------- overloadAlertView -------------------------- */
+// Maps the broadcast `overload` block to the alert's display state. null → hidden.
+
+test('overloadAlertView returns hidden for no overload', () => {
+  const v = u.overloadAlertView(null);
+  assert.equal(v.visible, false);
+});
+
+test('overloadAlertView describes pause mode (manual resume, no countdown)', () => {
+  const v = u.overloadAlertView({ mode: 'pause', resumeAt: null, reason: 'Server down.' });
+  assert.equal(v.visible, true);
+  assert.equal(v.showCountdown, false);
+  assert.match(v.title, /paused/i);
+  assert.match(v.message, /Server down\./);
+  assert.match(v.buttonLabel, /resume/i);
+});
+
+test('overloadAlertView describes delay mode (countdown + Resume now)', () => {
+  const v = u.overloadAlertView({ mode: 'delay', resumeAt: 123, reason: 'Server overloaded.' });
+  assert.equal(v.visible, true);
+  assert.equal(v.showCountdown, true);
+  assert.match(v.buttonLabel, /resume now/i);
+});
+
+test('overloadAlertView supplies a default message when no reason is given', () => {
+  const v = u.overloadAlertView({ mode: 'pause' }); // no reason
+  assert.equal(v.visible, true);
+  assert.ok(v.message && v.message.length > 0, 'a fallback message is present');
+});
+
+/* ----------------------------- resumeOfferText ---------------------------- */
+// The startup banner offering to resume transfers left unfinished by a previous
+// session. Singular/plural; empty list → '' (banner stays hidden).
+
+test('resumeOfferText is singular for one job', () => {
+  assert.equal(
+    u.resumeOfferText([{ jobId: 'a', kind: 'download', label: 'X', count: 1 }]),
+    'Resume 1 unfinished transfer from your last session?'
+  );
+});
+
+test('resumeOfferText is plural for several jobs', () => {
+  const jobs = [
+    { jobId: 'a', kind: 'download', label: 'X', count: 1 },
+    { jobId: 'b', kind: 'upload', label: 'Y', count: 2 },
+    { jobId: 'c', kind: 'bulk', label: 'Z', count: 3 },
+  ];
+  assert.equal(u.resumeOfferText(jobs), 'Resume 3 unfinished transfers from your last session?');
+});
+
+test('resumeOfferText is empty for no jobs (banner hidden)', () => {
+  assert.equal(u.resumeOfferText([]), '');
+  assert.equal(u.resumeOfferText(null), '');
+});
+
+/* --------------------------- planResumeReissue ---------------------------- */
+// Pure mapping of persisted resume descriptors → {channel, startArgs, card,
+// skipped}. The renderer just executes the plan (createJobCard + window.ia.*).
+// Uploads are skipped (not executed) when logged out — they stay persisted.
+
+test('planResumeReissue maps each kind to its channel + start args + card', () => {
+  const jobs = [
+    { kind: 'download', jobId: 'd1', items: [{ identifier: 'x' }], prefs: { a: 1 }, destRoot: '/dl', label: 'Two' },
+    { kind: 'collection', jobId: 'c1', collection: 'col', prefs: {}, destRoot: '/dl', maxItems: 50, label: 'Collection: col' },
+    { kind: 'upload', jobId: 'u1', identifier: 'it', files: [{ path: '/a', name: 'a' }], metadata: { t: 1 }, derive: true },
+    { kind: 'bulk', jobId: 'b1', plan: [{}, {}], derive: false, label: 'Bulk upload (2 items)' },
+  ];
+  const plans = u.planResumeReissue(jobs, { loggedIn: true });
+  assert.equal(plans.length, 4);
+
+  const [dl, coll, up, bulk] = plans;
+  assert.equal(dl.channel, 'download.start');
+  assert.deepEqual(dl.startArgs, { jobId: 'd1', items: [{ identifier: 'x' }], prefs: { a: 1 }, destRoot: '/dl', label: 'Two' });
+  assert.deepEqual(dl.card, { jobId: 'd1', label: 'Two', count: 0, kind: 'download' });
+  assert.ok(!dl.skipped);
+
+  assert.equal(coll.channel, 'download.collection');
+  assert.deepEqual(coll.startArgs, { jobId: 'c1', collection: 'col', prefs: {}, destRoot: '/dl', maxItems: 50 });
+  assert.equal(coll.card.kind, 'download');
+
+  assert.equal(up.channel, 'upload.start');
+  assert.deepEqual(up.startArgs, { jobId: 'u1', identifier: 'it', files: [{ path: '/a', name: 'a' }], metadata: { t: 1 }, derive: true });
+  assert.equal(up.card.count, 1, 'upload card count = file count');
+
+  assert.equal(bulk.channel, 'bulk.upload');
+  assert.deepEqual(bulk.startArgs, { jobId: 'b1', plan: [{}, {}], derive: false });
+  assert.equal(bulk.card.count, 2, 'bulk card count = plan length');
+});
+
+test('planResumeReissue marks upload/bulk jobs skipped when logged out', () => {
+  const jobs = [
+    { kind: 'download', jobId: 'd', items: [], prefs: {}, destRoot: '/dl', label: 'D' },
+    { kind: 'upload', jobId: 'u', identifier: 'i', files: [], metadata: {} },
+    { kind: 'bulk', jobId: 'b', plan: [], derive: false },
+  ];
+  const plans = u.planResumeReissue(jobs, { loggedIn: false });
+  assert.equal(plans.find((p) => p.channel === 'download.start').skipped, false, 'downloads run when logged out');
+  assert.equal(plans.find((p) => p.startArgs.jobId === 'u').skipped, true, 'upload skipped logged-out');
+  assert.equal(plans.find((p) => p.startArgs.jobId === 'b').skipped, true, 'bulk skipped logged-out');
+});
+
+test('planResumeReissue tolerates an empty/unknown list', () => {
+  assert.deepEqual(u.planResumeReissue([], { loggedIn: true }), []);
+  assert.deepEqual(u.planResumeReissue(null, { loggedIn: true }), []);
+  // Unknown kind → no plan entry (skipped silently).
+  assert.deepEqual(u.planResumeReissue([{ kind: 'bogus', jobId: 'z' }], { loggedIn: true }), []);
 });
 
 /* ----------------------------- transferBadge ------------------------------ */

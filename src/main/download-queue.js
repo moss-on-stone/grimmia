@@ -27,6 +27,50 @@ function jitteredBackoff(attempt, base = 500, rand = Math.random) {
   return Math.floor(capped * (0.5 + 0.5 * rand()));
 }
 
+// Upper bound on how long we'll wait for a server-supplied Retry-After. The
+// server's explicit instruction should be honored even past MAX_BACKOFF_MS, but
+// a hostile/absurd value (e.g. "wait an hour") shouldn't hang the queue.
+const MAX_RETRY_AFTER_MS = 120000;
+
+/**
+ * Parse an HTTP `Retry-After` header value into a wait in MILLISECONDS, per
+ * archive.org's guidelines (honor Retry-After on 429/503). The value is either a
+ * non-negative number of SECONDS or an HTTP-date. Returns null when absent or
+ * unparseable so the caller falls back to its own backoff.
+ *
+ * @param {string|number|null} value the raw header value
+ * @param {number} [nowMs] current epoch ms (injectable for deterministic tests)
+ */
+function parseRetryAfter(value, nowMs = Date.now()) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (s === '') return null;
+  // Pure digits → seconds.
+  if (/^\d+$/.test(s)) return Number(s) * 1000;
+  // Otherwise an HTTP-date; clamp a past date to 0 (don't wait negative time).
+  const when = Date.parse(s);
+  if (Number.isNaN(when)) return null;
+  return Math.max(0, when - nowMs);
+}
+
+/**
+ * How long to wait before the next retry of a transient failure. Prefers the
+ * server's Retry-After (carried on `err.retryAfter`) so we never wait LESS than
+ * archive.org asked; otherwise uses the jittered exponential backoff. When both
+ * apply, takes the larger. Capped at MAX_RETRY_AFTER_MS.
+ *
+ * @param {{retryAfter?:string|number}} err
+ * @param {number} attempt zero-based retry attempt
+ * @param {{base?:number, rand?:()=>number, nowMs?:number}} [opts]
+ */
+function retryDelay(err, attempt, opts = {}) {
+  const { base = 500, rand = Math.random, nowMs } = opts;
+  const backoff = jitteredBackoff(attempt, base, rand);
+  const ra = parseRetryAfter(err && err.retryAfter, nowMs);
+  if (ra == null) return backoff;
+  return Math.min(MAX_RETRY_AFTER_MS, Math.max(ra, backoff));
+}
+
 /** Whether an error is a transient failure worth retrying. */
 function isTransient(err) {
   if (!err) return false;
@@ -37,8 +81,56 @@ function isTransient(err) {
   return /slowdown|socket hang up|timeout|reset|temporarily/.test(msg);
 }
 
-function sleep(ms) {
-  return ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
+// Abort-aware sleep: resolves after `ms`, or EARLY if `signal` aborts — so a
+// Cancel during a (possibly multi-second Retry-After) backoff takes effect at
+// once instead of holding the single transfer slot for the full delay.
+function sleep(ms, signal) {
+  if (!(ms > 0)) return Promise.resolve();
+  if (signal && signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    if (signal) {
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(t);
+          resolve();
+        },
+        { once: true }
+      );
+    }
+  });
+}
+
+/**
+ * Retry a single async `attempt` that RESOLVES to a result object (it does not
+ * throw on HTTP errors — the JSON GET path inspects `result.ok`/`result.status`
+ * instead). Retries while `shouldRetry(result)` is true, up to `maxRetries`,
+ * waiting retryDelay() between tries and honoring a Retry-After read by
+ * `getRetryAfter(result)`. Returns the final result (success or last failure).
+ *
+ * This gives search/metadata/scrape GETs the same 429/503 + Retry-After courtesy
+ * the download queue already applies (#compliance).
+ *
+ * @param {() => Promise<any>} attempt makes one request, resolving to a result
+ * @param {object} [opts]
+ * @param {(result:any)=>boolean} opts.shouldRetry retry predicate on the result
+ * @param {(result:any)=>(string|number|null)} [opts.getRetryAfter] reads Retry-After
+ * @param {number} [opts.maxRetries=3]
+ * @param {()=>number} [opts.rand] jitter source (test seam)
+ * @param {(ms:number)=>Promise<void>} [opts.sleep] wait fn (test seam)
+ */
+async function withRetry(attempt, opts = {}) {
+  const { shouldRetry, getRetryAfter = () => null, maxRetries = 3, rand = Math.random, sleep: wait = sleep } = opts;
+  let tries = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const result = await attempt();
+    if (tries >= maxRetries || !shouldRetry(result)) return result;
+    const delay = retryDelay({ retryAfter: getRetryAfter(result) }, tries, { rand });
+    tries++;
+    await wait(delay);
+  }
 }
 
 /**
@@ -60,7 +152,10 @@ async function runQueue(items, runner, opts = {}) {
   const {
     concurrency = 3,
     maxRetries = 3,
-    backoffDelay: backoff = jitteredBackoff,
+    // The delay callback receives (attempt, error) so it can honor the server's
+    // Retry-After (carried on the error) — defaults to retryDelay, which prefers
+    // Retry-After over the jittered backoff. Tests may pass `() => 0`.
+    backoffDelay: backoff = (attempt, error) => retryDelay(error, attempt),
     onEvent = () => {},
     signal,
   } = opts;
@@ -88,7 +183,10 @@ async function runQueue(items, runner, opts = {}) {
         if (attempt < maxRetries && isTransient(error)) {
           attempt++;
           onEvent({ type: 'retry', index, attempt, error });
-          await sleep(backoff(attempt - 1));
+          // Pass the error so the delay fn can honor a server Retry-After. The
+          // sleep is abort-aware so a Cancel mid-backoff settles at once (the
+          // loop-top aborted-check then converts it to a Cancelled result).
+          await sleep(backoff(attempt - 1, error), signal);
           continue;
         }
         results[index] = { ok: false, error, index };
@@ -110,4 +208,14 @@ async function runQueue(items, runner, opts = {}) {
   return results;
 }
 
-module.exports = { backoffDelay, jitteredBackoff, isTransient, runQueue, MAX_BACKOFF_MS };
+module.exports = {
+  backoffDelay,
+  jitteredBackoff,
+  parseRetryAfter,
+  retryDelay,
+  withRetry,
+  isTransient,
+  runQueue,
+  MAX_BACKOFF_MS,
+  MAX_RETRY_AFTER_MS,
+};

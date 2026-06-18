@@ -16,6 +16,46 @@ test('encodeMetaValue leaves plain ASCII untouched', () => {
   assert.equal(core.encodeMetaValue('Hello World'), 'Hello World');
 });
 
+/* --------------------------------- IAError -------------------------------- */
+// IAError carries the HTTP status and (for 429/503 throttling) the server's
+// Retry-After so the retry layer can honor it. Older callers pass only message.
+
+test('IAError carries status, body, and Retry-After when given', () => {
+  const e = new core.IAError('Slow down', { status: 429, body: 'x', retryAfter: '30' });
+  assert.equal(e.name, 'IAError');
+  assert.equal(e.message, 'Slow down');
+  assert.equal(e.status, 429);
+  assert.equal(e.body, 'x');
+  assert.equal(e.retryAfter, '30');
+});
+
+test('IAError is fine with no options (retryAfter undefined)', () => {
+  const e = new core.IAError('boom');
+  assert.equal(e.status, undefined);
+  assert.equal(e.retryAfter, undefined);
+});
+
+/* --------------------------- uploadError (parity) ------------------------- */
+// uploadFile must build its non-2xx error like the download path: carrying the
+// status AND the server's Retry-After header, so a 503/429 during a big upload is
+// retried and honors archive.org's throttling instead of aborting the batch.
+
+test('uploadError captures status and Retry-After from the response headers', () => {
+  const e = core.uploadError(503, { 'retry-after': '45' }, 'cover.jpg', 'SlowDown');
+  assert.equal(e.name, 'IAError');
+  assert.equal(e.status, 503);
+  assert.equal(e.retryAfter, '45');
+  assert.equal(e.body, 'SlowDown');
+  assert.match(e.message, /cover\.jpg/);
+  assert.match(e.message, /503/);
+});
+
+test('uploadError tolerates missing headers / Retry-After', () => {
+  const e = core.uploadError(400, undefined, 'f.txt');
+  assert.equal(e.status, 400);
+  assert.equal(e.retryAfter, undefined);
+});
+
 test('encodeMetaValue URI-wraps non-ASCII (UTF-8)', () => {
   // ☃ snowman must be uri()-wrapped and percent-encoded.
   assert.equal(core.encodeMetaValue('snowman ☃'), 'uri(snowman%20%E2%98%83)');
@@ -96,6 +136,31 @@ test('parseLoginResponse extracts s3 keys, cookies and screenname', () => {
   assert.equal(r.secret, 'SKEY');
   assert.equal(r.cookies['logged-in-user'], 'u@example.com');
   assert.equal(r.screenname, 'Archivist');
+});
+
+test('parseLoginResponse captures the itemname (@slug) when present', () => {
+  // xauthn returns the URL-safe account slug separately from the display
+  // screenname. The slug — NOT the display name — is what /details/@<slug> needs
+  // (a CJK display name like 石上苔 would 400). Capture it.
+  const r = core.parseLoginResponse({
+    success: true,
+    values: {
+      s3: { access: 'AKEY', secret: 'SKEY' },
+      cookies: { 'logged-in-user': 'u@example.com', 'logged-in-sig': 'sig' },
+      screenname: '石上苔', // display name (CJK)
+      itemname: '@stone-on-moss', // URL slug
+    },
+  });
+  assert.equal(r.screenname, '石上苔');
+  assert.equal(r.itemname, '@stone-on-moss');
+});
+
+test('parseLoginResponse leaves itemname empty when xauthn omits it', () => {
+  const r = core.parseLoginResponse({
+    success: true,
+    values: { s3: { access: 'A', secret: 'S' }, cookies: {}, screenname: 'X' },
+  });
+  assert.equal(r.itemname, '');
 });
 
 test('parseLoginResponse throws a friendly error on failure', () => {

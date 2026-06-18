@@ -14,12 +14,34 @@ const { HOST } = require('../shared/constants');
 
 /** Thrown for archive.org-level failures with a human-readable message. */
 class IAError extends Error {
-  constructor(message, { status, body } = {}) {
+  constructor(message, { status, body, retryAfter } = {}) {
     super(message);
     this.name = 'IAError';
     this.status = status;
     this.body = body;
+    // The server's Retry-After (raw header value) on a 429/503, when present, so
+    // the retry layer can honor archive.org's throttling instruction (#compliance).
+    this.retryAfter = retryAfter;
   }
+}
+
+/**
+ * Build the IAError for a non-2xx upload response. Mirrors the download path:
+ * carries `status` AND the server's `Retry-After` (lowercased Node header key) so
+ * a 503/429 during an upload is retried and honors throttling instead of aborting
+ * the whole batch (#compliance). Pure — no IO — so it's unit-tested directly.
+ *
+ * @param {number} statusCode the HTTP status
+ * @param {object} [headers] the Node response headers (lowercased keys)
+ * @param {string} remote the remote filename (for the message)
+ * @param {string} [body] the response body, if read
+ */
+function uploadError(statusCode, headers, remote, body) {
+  return new IAError(`Upload failed (HTTP ${statusCode}) for ${remote}.`, {
+    status: statusCode,
+    body,
+    retryAfter: headers ? headers['retry-after'] : undefined,
+  });
 }
 
 const DEFAULT_SEARCH_FIELDS = [
@@ -134,6 +156,11 @@ function parseLoginResponse(json, email) {
       'logged-in-sig': v.cookies && v.cookies['logged-in-sig'],
     },
     screenname: v.screenname || email || '',
+    // The URL-safe account slug (e.g. "@stone-on-moss"), distinct from the
+    // display screenname. Used to build /details/@<slug> — a CJK/spaced
+    // screenname is NOT a valid slug and would 400 (mirrors internetarchive's
+    // separate itemname/screenname fields).
+    itemname: v.itemname || '',
     email: email || (v.cookies && v.cookies['logged-in-user']) || '',
   };
 }
@@ -158,6 +185,7 @@ function authHeader(creds) {
 
 module.exports = {
   IAError,
+  uploadError,
   HOST,
   DEFAULT_SEARCH_FIELDS,
   encodeMetaValue,

@@ -58,6 +58,12 @@ contextBridge.exposeInMainWorld('ia', {
     onQueue: (handler) => on('transfer:queue', handler),
     // Reorder a waiting transfer (drag-to-reorder).
     reorder: (jobId, toIndex) => ipcRenderer.invoke('transfer:reorder', { jobId, toIndex }),
+    // Resume transfers after a server-overload pause/delay.
+    resume: () => ipcRenderer.invoke('transfer:resume'),
+    // Phase 2 — resume transfers left unfinished by a previous session.
+    onResumeOffer: (handler) => on('transfer:resume-offer', handler), // (summaries[])
+    resumeJobs: () => ipcRenderer.invoke('transfer:resume-jobs'), // → full descriptors
+    discardQueue: () => ipcRenderer.invoke('transfer:discard-queue'),
   },
   metadata: {
     modify: (identifier, patches) => ipcRenderer.invoke('metadata:modify', { identifier, patches }),

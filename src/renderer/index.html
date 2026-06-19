@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src https://archive.org https://*.archive.org data:; connect-src 'none';"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https://archive.org https://*.archive.org data:; connect-src 'none';"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Grimmia</title>
@@ -46,7 +46,10 @@
     <div id="app" class="app" hidden>
       <header class="topbar">
         <div class="topbar-left">
-          <div class="brand-mark small">IA</div>
+          <button id="brand-about" class="brand-mark small brand-button" type="button"
+                  title="About Grimmia" aria-label="About Grimmia">
+            <img src="brand-icon.png" alt="Grimmia" />
+          </button>
           <nav class="tabs">
             <button class="tab active" data-tab="search">Search</button>
             <button class="tab" data-tab="favorites">Favorites</button>

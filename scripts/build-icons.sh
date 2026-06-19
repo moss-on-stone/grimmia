@@ -11,10 +11,13 @@
 #   build/icon.ico        Windows multi-resolution icon
 #
 # How the white is removed: a contiguous flood-fill from a corner with a fuzz
-# tolerance turns the near-white background transparent while LEAVING the green
-# tile and its soft drop shadow intact (the fill is connected-from-corner, so it
-# can't bleed into the tile). The result is trimmed to the art, padded to a
-# centered square, then downscaled.
+# tolerance turns the near-white background AND the soft grey drop-shadow halo
+# transparent, stopping at the dark-green tile edge (the fill is
+# connected-from-corner and the tile is far darker than the shadow, so it can't
+# bleed into the tile or the light moss inside it). Dropping the baked-in shadow
+# also avoids a faint grey fringe against dark UI — macOS/Windows add their own
+# shadow anyway. The result is trimmed to the tile, padded to a centered square,
+# then downscaled.
 #
 # Requires: ImageMagick 7 (`magick`) and macOS `iconutil`.
 # Idempotent: safe to re-run; overwrites the generated files in place.
@@ -32,9 +35,11 @@ command -v "$MAGICK" >/dev/null 2>&1 || { echo "[ERROR] ImageMagick (magick) not
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# Fuzz tolerance for the white flood-fill. ~12% removes the near-white paper and
-# the lightest shadow halo without touching the green tile.
-FUZZ=12%
+# Fuzz tolerance for the corner flood-fill. ~35% removes the white background AND
+# the light-grey drop-shadow halo, while stopping at the much darker green tile
+# (and not reaching the light moss, which is walled off by the dark tile). Too
+# low leaves a grey shadow fringe; too high would start eating the tile edge.
+FUZZ=35%
 
 echo "[INFO] removing white background (flood-fill, fuzz=${FUZZ})"
 # Border 1px white so the corner seed always sits on background; floodfill that
@@ -46,11 +51,18 @@ echo "[INFO] removing white background (flood-fill, fuzz=${FUZZ})"
   -trim +repage \
   "$TMP/trimmed.png"
 
-echo "[INFO] padding to a centered square + downscaling to 1024 (8-bit alpha)"
+# Apple's macOS 11+ (Big Sur) icon grid: the rounded body is 824×824 centered on
+# a 1024 canvas — i.e. ~100px transparent margin per side (~80%). macOS does NOT
+# auto-mask third-party .icns; it shows the art as-is (plus its own shadow), so
+# the tile MUST carry this margin or it renders oversized next to other apps.
+# Square the tile first (uniform scale), resize to 824, then pad to 1024.
+echo "[INFO] placing the tile at 824/1024 (Apple macOS icon grid) + 8-bit alpha"
 SIDE="$("$MAGICK" identify -format "%[fx:max(w,h)]" "$TMP/trimmed.png")"
 "$MAGICK" "$TMP/trimmed.png" \
   -background none -gravity center -extent "${SIDE}x${SIDE}" \
-  -filter Lanczos -resize 1024x1024 -depth 8 "PNG32:$BUILD/icon.png"
+  -filter Lanczos -resize 824x824 \
+  -background none -gravity center -extent 1024x1024 \
+  -depth 8 "PNG32:$BUILD/icon.png"
 command cp -f "$BUILD/icon.png" "$BUILD/icon-1024.png"
 
 # --- macOS .icns -----------------------------------------------------------

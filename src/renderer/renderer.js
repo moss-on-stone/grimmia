@@ -236,6 +236,8 @@ renderAbout();
 // Help-page donate link + login signup link (external).
 if ($('#help-donate')) $('#help-donate').addEventListener('click', () => openExternalLink('https://archive.org/donate'));
 if ($('#login-signup')) $('#login-signup').addEventListener('click', () => openExternalLink('https://archive.org/signup'));
+// Clicking the top-left Grimmia brand icon opens the About tab.
+if ($('#brand-about')) $('#brand-about').addEventListener('click', () => activateTab('about'));
 
 /* ------------------------------- search ---------------------------------- */
 let currentPage = 1;

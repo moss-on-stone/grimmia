@@ -65,4 +65,7 @@ test('index.html CSP restricts img-src to archive.org hosts only', () => {
   const value = imgSrc[1];
   assert.ok(!/\bhttps:(\s|$)/.test(value), 'img-src must not allow blanket https:');
   assert.match(value, /archive\.org/, 'img-src should allow archive.org');
+  // 'self' is allowed so the bundled brand icon (src/renderer/brand-icon.png)
+  // can load; it is NOT a blanket-https relaxation.
+  assert.match(value, /'self'/, "img-src should allow 'self' for the bundled brand icon");
 });

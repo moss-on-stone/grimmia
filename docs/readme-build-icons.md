@@ -18,13 +18,22 @@ derivatives (smooth 8-bit RGBA alpha):
 
 The script makes the white transparent, then derives every size from it.
 
-## How the white is removed
+## How the white (and shadow) is removed
 
-A contiguous **flood-fill from a corner** with a fuzz tolerance (`FUZZ=12%`)
-turns the near-white background transparent while LEAVING the green tile and its
-soft drop shadow intact — the fill is connected-from-corner, so it can't bleed
-into the tile. The result is trimmed to the art, padded to a **centered square**,
-then downscaled to 1024 with Lanczos for clean anti-aliased edges.
+A contiguous **flood-fill from a corner** with a fuzz tolerance (`FUZZ=35%`)
+turns the near-white background AND the light-grey drop-shadow halo transparent,
+stopping at the much darker green tile edge (the fill is connected-from-corner
+and can't reach the light moss inside the dark tile). Dropping the baked-in
+shadow avoids a grey fringe against dark UI — macOS/Windows add their own shadow.
+
+## Sizing (Apple macOS icon grid)
+
+macOS 11+ (Big Sur and later) does **not** auto-mask third-party `.icns` — it
+shows the artwork as-is (plus a system shadow). Apple's icon grid places the
+rounded body at **824×824 on a 1024 canvas** (~100px transparent margin per
+side, ≈80%). The script squares the isolated tile, resizes it to **824**, and
+centers it on a **1024** transparent canvas so Grimmia renders the same
+proportional size as other macOS apps (not oversized/edge-to-edge).
 
 ## Usage
 

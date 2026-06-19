@@ -130,6 +130,12 @@ label input, label select, label textarea { margin-top: 5px; color: var(--text);
   font-weight: 800; font-size: 22px; letter-spacing: 0.5px; color: #fff;
 }
 .brand-mark.small { width: 34px; height: 34px; font-size: 15px; border-radius: 9px; }
+/* The topbar brand is a button holding the Grimmia icon (opens About). Strip the
+   gradient/button chrome so the icon shows on its own; the icon already has its
+   own rounded tile. */
+.brand-button { background: none; border: none; padding: 0; cursor: pointer; overflow: hidden; }
+.brand-button:hover { background: none; opacity: 0.85; }
+.brand-button img { width: 100%; height: 100%; object-fit: contain; display: block; }
 #login-btn { width: 100%; margin-top: 6px; }
 .login-hint { color: var(--muted); font-size: 12px; margin-top: 14px; line-height: 1.5; }
 

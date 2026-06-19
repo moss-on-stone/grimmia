@@ -13,6 +13,13 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.uiUtil = api;
 })(typeof window !== 'undefined' ? window : null, function () {
+  // Keys that the el() DOM helper must assign as PROPERTIES (node[k] = v), not
+  // attributes. `value` is the critical one: a <textarea value="…"> attribute is
+  // ignored by the browser (textarea content is the property / child text), which
+  // made the edit-metadata description textarea render blank. The booleans behave
+  // correctly only as properties too.
+  const domPropKeys = new Set(['value', 'checked', 'disabled', 'selected', 'hidden', 'readOnly', 'multiple']);
+
   /** Human-readable byte size, e.g. 1536 -> "1.5 KB". */
   function formatBytes(bytes) {
     const n = Number(bytes);
@@ -482,6 +489,7 @@
     resumeOfferText,
     planResumeReissue,
     aboutContent,
+    domPropKeys,
     UPLOAD_LANGUAGES,
   };
 });

@@ -85,12 +85,14 @@ test('el() has NO innerHTML sink — the dead {html:...} branch is removed (XSS 
   );
 });
 
-test('el() sets boolean attrs (checked/hidden/disabled) as PROPERTIES, not attributes', () => {
-  // Guards the bug where checked:false still checked the box because
-  // setAttribute("checked", false) makes the attribute present.
+test('el() sets value + boolean attrs as PROPERTIES, not attributes', () => {
+  // Guards two bugs: (a) checked:false still checked the box because
+  // setAttribute("checked", false) leaves the attribute present; (b) a
+  // <textarea value="…"> attribute is ignored, so the description rendered blank.
+  // The key set lives in uiUtil.domPropKeys; el() assigns it via node[k]=v.
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'renderer.js'), 'utf8');
-  assert.match(src, /BOOL_PROPS\s*=\s*new Set\(\[[^\]]*'checked'/, 'checked must be in BOOL_PROPS');
-  assert.match(src, /BOOL_PROPS\.has\(k\)\)\s*node\[k\]\s*=\s*Boolean\(v\)/, 'bool props set via node[k]=Boolean(v)');
+  assert.match(src, /DOM_PROP_KEYS\s*=\s*uiUtil\.domPropKeys/, 'el() uses uiUtil.domPropKeys');
+  assert.match(src, /DOM_PROP_KEYS\.has\(k\)\)\s*node\[k\]\s*=/, 'prop keys set via node[k]=…');
 });
 
 test('#5 compact row spaces the mediatype label from the title', () => {

@@ -531,3 +531,22 @@ test('aboutContent is signed and dated', () => {
   assert.match(text, /Moss on Stone/);
   assert.match(text, /2026/);
 });
+
+/* ----------------------------- domPropKeys -------------------------------- */
+// el() must set `value` (and boolean props) as DOM PROPERTIES, not attributes —
+// a <textarea value="..."> attribute is ignored by the browser, so the edit-
+// metadata description textarea rendered BLANK. domPropKeys lists the keys that
+// must be assigned via node[k]=v rather than setAttribute.
+
+test('domPropKeys includes value (the textarea bug) and the boolean props', () => {
+  assert.ok(u.domPropKeys.has('value'), 'value must be a property (textarea fix)');
+  for (const k of ['checked', 'disabled', 'selected', 'hidden', 'readOnly', 'multiple']) {
+    assert.ok(u.domPropKeys.has(k), `${k} must be a property`);
+  }
+});
+
+test('domPropKeys does NOT include ordinary attributes', () => {
+  for (const k of ['class', 'type', 'rows', 'placeholder', 'title', 'href']) {
+    assert.ok(!u.domPropKeys.has(k), `${k} should remain an attribute`);
+  }
+});

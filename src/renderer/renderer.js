@@ -27,14 +27,17 @@ const $ = (sel) => document.querySelector(sel);
 // Boolean attributes must be set as PROPERTIES, not attributes — setAttribute
 // makes the attribute *present* regardless of value (so checked:false would
 // still check the box). These get node[k] = Boolean(v) instead.
-const BOOL_PROPS = new Set(['checked', 'disabled', 'selected', 'hidden', 'readOnly', 'multiple']);
+// Keys el() must set as DOM PROPERTIES (node[k]=v), not attributes — esp. `value`
+// (a <textarea value="…"> attribute is ignored by the browser). Single source of
+// truth in uiUtil so it's testable.
+const DOM_PROP_KEYS = uiUtil.domPropKeys;
 const el = (tag, attrs = {}, children = []) => {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k === 'class') node.className = v;
     else if (k === 'text') node.textContent = v;
     else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
-    else if (BOOL_PROPS.has(k)) node[k] = Boolean(v);
+    else if (DOM_PROP_KEYS.has(k)) node[k] = k === 'value' ? v : Boolean(v);
     else if (v != null) node.setAttribute(k, v);
   }
   for (const c of [].concat(children)) {

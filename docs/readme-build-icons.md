@@ -1,28 +1,30 @@
 # readme-build-icons
 
-Regenerate the app icons from a single reproducible source.
+Regenerate the app icons from the artwork master.
 
 ## What it does
 
-`scripts/build-icons.sh` builds the IA Desktop icon and all platform
-derivatives:
+`scripts/build-icons.sh` takes the master artwork and produces all platform
+derivatives (smooth 8-bit RGBA alpha):
 
-- `build/icon.png` / `build/icon-1024.png` — 1024×1024 master (full-color RGBA)
+- `build/icon.png` / `build/icon-1024.png` — 1024×1024 master raster
 - `build/icon.icns` — macOS iconset (all 10 required sizes, via `iconutil`)
 - `build/icon.ico` — Windows multi-resolution icon (256→16)
 
-It draws the icon with ImageMagick primitives — a blue→purple vertical gradient
-masked to a continuous-corner rounded rect, with a white "IA" wordmark — and
-**supersamples at 4× (4096px) then downscales to 1024px**. That downscale is
-what produces smooth, anti-aliased **8-bit alpha** edges.
+## Input
 
-## Why it exists (the bug it fixed)
+- `build/icon-source.png` — the master artwork: the Grimmia "moss cushion on a
+  book" green rounded-square tile, supplied on a **white background**.
 
-The previous PNGs had **1-bit (binary) alpha**. Binary alpha can't anti-alias,
-so the rounded corners were jagged and read as a harsh dark "boundary" around
-the tile — out of step with current Apple/Windows icon guidance. Rebuilding with
-smooth 8-bit alpha removes the boundary and gives a clean macOS-style rounded
-tile (and a crisp full-bleed-safe square for Windows).
+The script makes the white transparent, then derives every size from it.
+
+## How the white is removed
+
+A contiguous **flood-fill from a corner** with a fuzz tolerance (`FUZZ=12%`)
+turns the near-white background transparent while LEAVING the green tile and its
+soft drop shadow intact — the fill is connected-from-corner, so it can't bleed
+into the tile. The result is trimmed to the art, padded to a **centered square**,
+then downscaled to 1024 with Lanczos for clean anti-aliased edges.
 
 ## Usage
 
@@ -39,10 +41,10 @@ Idempotent — safe to re-run; overwrites the generated files in place.
 
 ## Notes
 
-- `build/icon.svg` is kept as a human-readable **design reference only**.
-  ImageMagick's built-in SVG renderer does NOT honor its gradient (it renders
-  the tile solid black), so the script does not rasterize the SVG — it rebuilds
-  the artwork natively. Edit both the SVG (for reference) and the coordinates in
-  the script (the source of truth) if the design changes.
+- To change the icon, replace `build/icon-source.png` with new artwork (a
+  rounded-square tile on white) and re-run the script.
+- If new artwork has a non-white background or a tighter shadow, adjust `FUZZ`
+  in the script.
 - After regenerating, rebuild the installers so `dist/` picks up the new icon
-  (see `CLAUDE.md` → bump/commit/rebuild).
+  (see `CLAUDE.md` → bump/commit/rebuild/release). The README's top icon shows
+  `build/icon.png`, so it updates automatically.

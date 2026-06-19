@@ -1,4 +1,4 @@
-# IA Desktop — Architecture Overview
+# Grimmia — Architecture Overview
 
 _A developer-oriented map of what this app is, how it's structured, and how the
 pieces fit together. For user-facing install/usage, see the top-level

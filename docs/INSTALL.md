@@ -1,6 +1,6 @@
-# Installing IA Desktop
+# Installing Grimmia
 
-IA Desktop is **open-source and free**, but it is **not signed with a paid
+Grimmia is **open-source and free**, but it is **not signed with a paid
 Apple Developer ID or a Windows code-signing certificate**. That's normal for
 small independent apps — it just means your operating system shows an extra
 "unknown developer" warning the first time you open it. The app is safe; you
@@ -16,7 +16,7 @@ This page has the exact steps for **macOS** and **Windows**.
 1. Open the downloaded **`.dmg`** file.
    - Apple Silicon (M1/M2/M3/M4) Macs: use the **`…-arm64.dmg`**.
    - Older Intel Macs: use the **`…-x64.dmg`**.
-2. In the window that appears, **drag the IA Desktop icon onto the Applications
+2. In the window that appears, **drag the Grimmia icon onto the Applications
    folder**.
 3. Eject the disk image (drag it to the Trash / click the ⏏ next to it).
 
@@ -27,11 +27,11 @@ just isn't signed with a paid Apple certificate) and both are easy to get past.
 Find the message you got below.
 
 > ℹ️ **Whichever warning you see, you only do this once.** After the first
-> successful open, IA Desktop launches normally with no warnings.
+> successful open, Grimmia launches normally with no warnings.
 
 ---
 
-#### ⚠️ Message A — *"IA Desktop.app" is damaged and can't be opened. You should move it to the Bin.*
+#### ⚠️ Message A — *"Grimmia.app" is damaged and can't be opened. You should move it to the Bin.*
 
 This is the one you'll usually get when you **downloaded the app with a browser**
 (Firefox, Chrome, Safari), especially on **macOS Sequoia (15) or newer**. The app
@@ -46,30 +46,30 @@ arrived with a download "quarantine" flag, and (unlike the other message) it doe
 3. Paste this line and press Return (it removes the download quarantine flag):
 
    ```bash
-   xattr -dr com.apple.quarantine "/Applications/IA Desktop.app"
+   xattr -dr com.apple.quarantine "/Applications/Grimmia.app"
    ```
 
    - If you haven't moved it to Applications yet, point at wherever it is, e.g.
-     `xattr -dr com.apple.quarantine ~/Downloads/"IA Desktop.app"`.
+     `xattr -dr com.apple.quarantine ~/Downloads/"Grimmia.app"`.
    - It prints nothing on success — that's normal.
-4. Now open **IA Desktop** normally (double-click). It launches without the
+4. Now open **Grimmia** normally (double-click). It launches without the
    warning.
 
 ---
 
-#### ⚠️ Message B — *Apple could not verify "IA Desktop" is free of malware* (or *"…can't be opened because it is from an unidentified developer"*)
+#### ⚠️ Message B — *Apple could not verify "Grimmia" is free of malware* (or *"…can't be opened because it is from an unidentified developer"*)
 
 This milder warning gives you a way through in the UI — no Terminal needed.
 
 **macOS Sequoia (15) or newer**
-1. Open **IA Desktop** from Applications. You'll see the warning — click **Done**.
+1. Open **Grimmia** from Applications. You'll see the warning — click **Done**.
 2. Open **System Settings → Privacy & Security**.
-3. Scroll to the **Security** section. You'll see *"IA Desktop was blocked…"* —
+3. Scroll to the **Security** section. You'll see *"Grimmia was blocked…"* —
    click **Open Anyway**.
 4. Confirm with **Open Anyway** and enter your password / Touch ID.
 
 **macOS Sonoma (14) or older**
-1. In Applications, **right-click** (or Control-click) **IA Desktop** → **Open**.
+1. In Applications, **right-click** (or Control-click) **Grimmia** → **Open**.
 2. In the dialog, click **Open** again.
 
 > If Message B's *"Open Anyway"* doesn't appear, or the app still won't launch,
@@ -80,14 +80,14 @@ This milder warning gives you a way through in the UI — no Terminal needed.
 ## Windows
 
 ### 1. Install
-1. Run the downloaded **`IA Desktop Setup <version>.exe`**.
+1. Run the downloaded **`Grimmia Setup <version>.exe`**.
 2. Windows SmartScreen may show **"Windows protected your PC."** This appears for
    any app without a paid certificate. Click **More info**, then **Run anyway**.
 3. Follow the installer — you can pick the install folder. It creates Start-menu
    and desktop shortcuts.
 
 ### 2. Open it
-Launch **IA Desktop** from the Start menu or the desktop shortcut. No further
+Launch **Grimmia** from the Start menu or the desktop shortcut. No further
 warnings after the first run.
 
 ---

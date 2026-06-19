@@ -46,7 +46,7 @@ function activeSafeStorage() {
 function userDataDir() {
   if (dataDirOverride) return dataDirOverride;
   if (app && app.getPath) return app.getPath('userData');
-  return path.join(require('node:os').homedir(), '.ia-desktop');
+  return path.join(require('node:os').homedir(), '.grimmia');
 }
 
 const CREDS_FILE = () => path.join(userDataDir(), 'credentials.enc');

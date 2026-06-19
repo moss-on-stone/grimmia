@@ -14,12 +14,12 @@ mirrors them to the console:
 2026-06-07T23:48:20.002Z ERROR download error reason="Connection dropped"
 ```
 
-- **Location:** `<userData>/logs/ia-desktop.log`
-  (macOS: `~/Library/Application Support/IA Desktop/logs/`). Open it from
+- **Location:** `<userData>/logs/grimmia.log`
+  (macOS: `~/Library/Application Support/Grimmia/logs/`). Open it from
   **Preferences → Logs & diagnostics → Open logs folder**.
 - **Levels:** DEBUG < INFO < WARNING < ERROR. The threshold is INFO in
   production and DEBUG when launched with `--dev`.
-- **Rotation:** when the file passes ~2 MB it rolls to `ia-desktop.log.1`
+- **Rotation:** when the file passes ~2 MB it rolls to `grimmia.log.1`
   (one backup kept), so the log never grows unbounded.
 - **Robust:** logging never throws — a formatting/IO failure is swallowed so it
   can't crash the app. Each entry is exactly one line (newlines escaped), so the

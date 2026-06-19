@@ -20,6 +20,6 @@ const { version } = require('../../package.json');
 
 const HOST = 'archive.org';
 const S3_HOST = 's3.us.archive.org';
-const USER_AGENT = `IA-Desktop/${version} (+https://github.com/moss-on-stone/ia-desktop)`;
+const USER_AGENT = `Grimmia/${version} (+https://github.com/moss-on-stone/grimmia)`;
 
 module.exports = { HOST, S3_HOST, USER_AGENT };

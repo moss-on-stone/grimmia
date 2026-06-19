@@ -26,8 +26,8 @@ function freshLog() {
     advance: (ms) => {
       t += ms;
     },
-    file: () => path.join(dir, 'ia-desktop.log'),
-    read: () => fs.readFileSync(path.join(dir, 'ia-desktop.log'), 'utf8'),
+    file: () => path.join(dir, 'grimmia.log'),
+    read: () => fs.readFileSync(path.join(dir, 'grimmia.log'), 'utf8'),
     cleanup: () => {
       logger.__setLogDir(undefined);
       logger.__setClock(undefined);
@@ -70,7 +70,7 @@ test('rotates the file when it exceeds the max size', () => {
     // maxBytes=200; write enough to exceed it.
     for (let i = 0; i < 20; i++) logger.info(`line number ${i} with some padding text`);
     // A rotated file (.1) should exist, and the active file should be smaller.
-    assert.ok(fs.existsSync(h.file() + '.1'), 'a rotated ia-desktop.log.1 should exist');
+    assert.ok(fs.existsSync(h.file() + '.1'), 'a rotated grimmia.log.1 should exist');
     assert.ok(fs.statSync(h.file()).size < 1000);
   } finally {
     h.cleanup();

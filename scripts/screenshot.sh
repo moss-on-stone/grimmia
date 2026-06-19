@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# screenshot.sh — capture the IA Desktop window to a PNG, headless.
+# screenshot.sh — capture the Grimmia window to a PNG, headless.
 #
 # Launches the app with --screenshot, waits for it to write the file and quit,
 # then prints the path. Lets a developer/agent verify the real rendered UI
@@ -29,7 +29,7 @@ case "$OUT" in
   *) OUT="$ROOT/$OUT" ;;
 esac
 
-echo "[INFO] capturing IA Desktop window -> $OUT"
+echo "[INFO] capturing Grimmia window -> $OUT"
 # 30s ceiling so it can never hang the caller.
 # --dev is required: the screenshot file-write is gated behind dev mode so it
 # cannot be abused in a packaged production build (H3).

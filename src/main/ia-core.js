@@ -156,12 +156,14 @@ function parseLoginResponse(json, email) {
       'logged-in-sig': v.cookies && v.cookies['logged-in-sig'],
     },
     screenname: v.screenname || email || '',
-    // The URL-safe account slug (e.g. "@stone-on-moss"), distinct from the
-    // display screenname. Used to build /details/@<slug> — a CJK/spaced
-    // screenname is NOT a valid slug and would 400 (mirrors internetarchive's
-    // separate itemname/screenname fields).
-    itemname: v.itemname || '',
-    email: email || (v.cookies && v.cookies['logged-in-user']) || '',
+    // The URL-safe account slug used to build /details/@<slug>. xauthn returns it
+    // as `itemname` (confirmed live: the response's `values` includes an
+    // `itemname` key, e.g. "@g_y_library"), DISTINCT from the display
+    // `screenname` — which can be CJK/spaced and 400s as a profile URL. Fall back
+    // to the `logged-in-user` cookie (also the slug form) if itemname is ever
+    // absent. userProfileUrl tolerates a leading '@' either way.
+    itemname: v.itemname || (v.cookies && v.cookies['logged-in-user']) || '',
+    email: email || '',
   };
 }
 

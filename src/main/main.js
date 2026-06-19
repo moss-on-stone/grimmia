@@ -178,7 +178,7 @@ function createWindow() {
     height: 800,
     minWidth: 880,
     minHeight: 560,
-    title: 'IA Desktop',
+    title: 'Grimmia',
     backgroundColor: '#0f1115',
     webPreferences,
   });

@@ -209,6 +209,8 @@ test('largeCollectionWarning honors a custom threshold', () => {
 test('userProfileUrl builds the @slug profile URL for a valid slug', () => {
   assert.equal(u.userProfileUrl('konrad'), 'https://archive.org/details/@konrad');
   assert.equal(u.userProfileUrl('stone-on_moss.1'), 'https://archive.org/details/@stone-on_moss.1');
+  // The real-world slug form from the logged-in-user cookie (underscores).
+  assert.equal(u.userProfileUrl('g_y_library'), 'https://archive.org/details/@g_y_library');
 });
 
 test('userProfileUrl tolerates a leading @ and trims whitespace', () => {
@@ -467,4 +469,61 @@ test('scopeFromInput ignores unknown field-like tokens', () => {
   // foo: is not a recognized field, so the dropdown stays on Everything.
   assert.equal(u.scopeFromInput('foo:bar baz', FIELDS), 'Everything');
   assert.equal(u.scopeFromInput('http://example.com', FIELDS), 'Everything');
+});
+
+/* ------------------------------- aboutContent ----------------------------- */
+// The About tab content as a structured, testable model (blocks of headings and
+// paragraphs; paragraphs are segments of plain text or {text,url} links). The
+// renderer turns links into shell.openExternal clicks (no raw <a href> under the
+// strict CSP).
+
+test('aboutContent returns headings and paragraphs with link segments', () => {
+  const blocks = u.aboutContent();
+  assert.ok(Array.isArray(blocks) && blocks.length > 0);
+  // Every block is a heading or a paragraph with a segments array.
+  for (const b of blocks) {
+    assert.ok(b.type === 'heading' || b.type === 'para', `unexpected block type ${b.type}`);
+    if (b.type === 'heading') assert.equal(typeof b.text, 'string');
+    if (b.type === 'para') assert.ok(Array.isArray(b.segments));
+  }
+  assert.ok(blocks.some((b) => b.type === 'heading' && /about/i.test(b.text)), 'has an About heading');
+});
+
+test('aboutContent links point at the right archive.org / GitHub URLs', () => {
+  const links = u
+    .aboutContent()
+    .filter((b) => b.type === 'para')
+    .flatMap((b) => b.segments)
+    .filter((s) => s && s.url);
+  const urls = links.map((l) => l.url);
+  assert.ok(urls.some((u2) => /archive\.org\/developers\/internetarchive\/cli/.test(u2)), 'IA CLI docs link');
+  assert.ok(urls.some((u2) => /archive\.org\/signup/.test(u2)), 'signup link');
+  assert.ok(urls.includes('https://github.com/moss-on-stone/grimmia'), 'the new repo URL');
+  // Every link must be an absolute https URL (the renderer opens these externally).
+  for (const l of links) assert.match(l.url, /^https:\/\//, `link ${l.text} must be https`);
+});
+
+test('aboutContent states the dependency claim accurately (no third-party RUNTIME deps)', () => {
+  const text = u
+    .aboutContent()
+    .filter((b) => b.type === 'para')
+    .flatMap((b) => b.segments)
+    .map((s) => (typeof s === 'string' ? s : s.text))
+    .join(' ');
+  // Must qualify "runtime" — not an unqualified "no dependencies" (Electron + 2
+  // dev tools exist). Must mention Electron.
+  assert.match(text, /runtime/i, 'claim is scoped to runtime dependencies');
+  assert.match(text, /Electron/, 'mentions the Electron runtime');
+  assert.ok(!/\bno dependencies\b/i.test(text), 'must not overclaim "no dependencies"');
+});
+
+test('aboutContent is signed and dated', () => {
+  const text = u
+    .aboutContent()
+    .filter((b) => b.type === 'para')
+    .flatMap((b) => b.segments)
+    .map((s) => (typeof s === 'string' ? s : s.text))
+    .join(' ');
+  assert.match(text, /Moss on Stone/);
+  assert.match(text, /2026/);
 });

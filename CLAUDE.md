@@ -1,4 +1,4 @@
-# IA Desktop — project instructions
+# Grimmia — project instructions
 
 ## After fixing anything: bump, commit, rebuild, RELEASE
 
@@ -97,7 +97,7 @@ It uses the app's `--screenshot=<path>` flag, which is gated behind `--dev`
 the wrapper passes `--dev` for you (see `docs/readme-screenshot.md`).
 Capture the **packaged** app too when verifying a release (pass `--dev` so the
 screenshot path is honored):
-`"dist/mac-arm64/IA Desktop.app/Contents/MacOS/IA Desktop" --dev --screenshot=<path>`.
+`"dist/mac-arm64/Grimmia.app/Contents/MacOS/Grimmia" --dev --screenshot=<path>`.
 
 ## archive.org compliance (non-negotiable — go above and beyond)
 
@@ -108,7 +108,7 @@ are binding on ALL future changes; never weaken them for convenience:
 
 1. **Identify ourselves on EVERY request.** Every outbound call to archive.org
    MUST send the descriptive `User-Agent` from `src/shared/constants.js`
-   (`IA-Desktop/<version> (+https://github.com/moss-on-stone/ia-desktop)` —
+   (`Grimmia/<version> (+https://github.com/moss-on-stone/grimmia)` —
    tool, version, and a public identification/contact URL). Never issue a
    request that bypasses this header. **No personal contact info** in the UA
    (per the user's privacy rule) — the repo's issue tracker is the contact path.

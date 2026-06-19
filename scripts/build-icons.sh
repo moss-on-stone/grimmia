@@ -1,69 +1,55 @@
 #!/bin/bash
 #
-# build-icons.sh — regenerate the app icons.
+# build-icons.sh — regenerate the Grimmia app icons from the artwork master.
 #
-# Builds the icon entirely with ImageMagick primitives (a blue→purple gradient
-# masked to a continuous-corner rounded rect, with a white "IA" wordmark),
-# SUPERSAMPLED at 4× then downscaled — which yields smooth 8-bit anti-aliased
-# alpha. The previous PNG had 1-bit (binary) alpha, whose aliased rounded
-# corners read as a harsh dark "boundary"; this fixes that and brings the icon
-# in line with current Apple/Windows recommendations (smooth edges, no border,
-# proper rounded macOS tile, full-bleed-square-safe for Windows).
-#
-# Outputs (with smooth 8-bit alpha):
-#   build/icon.png        1024×1024 master raster (full-color RGBA)
+# Input:  build/icon-source.png  — the master artwork (a green rounded-square
+#         "moss cushion on a book" tile, generated art, on a WHITE background).
+# Output (smooth 8-bit RGBA alpha):
+#   build/icon.png        1024×1024 master raster (white made transparent)
 #   build/icon-1024.png   copy of the master
 #   build/icon.icns       macOS iconset (all required sizes, via iconutil)
 #   build/icon.ico        Windows multi-resolution icon
 #
+# How the white is removed: a contiguous flood-fill from a corner with a fuzz
+# tolerance turns the near-white background transparent while LEAVING the green
+# tile and its soft drop shadow intact (the fill is connected-from-corner, so it
+# can't bleed into the tile). The result is trimmed to the art, padded to a
+# centered square, then downscaled.
+#
 # Requires: ImageMagick 7 (`magick`) and macOS `iconutil`.
 # Idempotent: safe to re-run; overwrites the generated files in place.
-#
-# NOTE: ImageMagick's built-in SVG renderer does NOT honor the gradient in
-# build/icon.svg (it rasterizes the tile as solid black). icon.svg is kept as
-# the human-readable design reference ONLY; this script does not use it.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="$ROOT/build"
+SOURCE="$BUILD/icon-source.png"
 
 MAGICK="/opt/homebrew/bin/magick"
 command -v "$MAGICK" >/dev/null 2>&1 || MAGICK="magick"
 command -v "$MAGICK" >/dev/null 2>&1 || { echo "[ERROR] ImageMagick (magick) not found" >&2; exit 1; }
+[ -f "$SOURCE" ] || { echo "[ERROR] missing master artwork: $SOURCE" >&2; exit 1; }
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# Supersample factor: design coords are in 1024 space; we render at 4× = 4096
-# then downscale to 1024 so all edges (rounded corners, letters) anti-alias.
-SS=4096
-GRAD_TOP="#5B7CFA"
-GRAD_BOTTOM="#8A6CF6"
+# Fuzz tolerance for the white flood-fill. ~12% removes the near-white paper and
+# the lightest shadow halo without touching the green tile.
+FUZZ=12%
 
-echo "[INFO] rendering supersampled master (${SS}px → 1024px, 8-bit alpha)"
+echo "[INFO] removing white background (flood-fill, fuzz=${FUZZ})"
+# Border 1px white so the corner seed always sits on background; floodfill that
+# corner to transparent; shave the border back off; trim to the art.
+"$MAGICK" "$SOURCE" \
+  -alpha set -bordercolor white -border 1 \
+  -fuzz ${FUZZ} -fill none -draw "alpha 0,0 floodfill" \
+  -shave 1x1 \
+  -trim +repage \
+  "$TMP/trimmed.png"
 
-# 1) vertical gradient
-"$MAGICK" -size ${SS}x${SS} gradient:"${GRAD_TOP}-${GRAD_BOTTOM}" "$TMP/g.png"
-
-# 2) rounded-rect alpha mask. 1024-space inset 70 / corner 198 → ×4.
-"$MAGICK" -size ${SS}x${SS} xc:none -fill white \
-  -draw "roundrectangle 280,280 3812,3812 792,792" "$TMP/m.png"
-
-# 3) gradient tile = gradient with the rounded-rect as its alpha
-"$MAGICK" "$TMP/g.png" "$TMP/m.png" -alpha off -compose CopyOpacity -composite "$TMP/tile.png"
-
-# 4) white "IA" wordmark (coords are 1024-space ×4)
-#    I: rect 318,300→404,724 ; A: outer polygon ; counter: inner triangle
-"$MAGICK" -size ${SS}x${SS} xc:none -fill white \
-  -draw "rectangle 1272,1200 1616,2896" \
-  -draw "path 'M 2240 1200 L 2528 1200 L 3040 2896 L 2688 2896 L 2592 2552 L 2176 2552 L 2080 2896 L 1728 2896 Z'" \
-  "$TMP/letters.png"
-"$MAGICK" -size ${SS}x${SS} xc:none -fill white \
-  -draw "path 'M 2384 1632 L 2264 2248 L 2504 2248 Z'" "$TMP/counter.png"
-"$MAGICK" "$TMP/letters.png" "$TMP/counter.png" -compose Dst_Out -composite "$TMP/letters_final.png"
-
-# 5) composite letters onto the tile, then downscale (anti-aliasing happens here)
-"$MAGICK" "$TMP/tile.png" "$TMP/letters_final.png" -compose over -composite \
+echo "[INFO] padding to a centered square + downscaling to 1024 (8-bit alpha)"
+SIDE="$("$MAGICK" identify -format "%[fx:max(w,h)]" "$TMP/trimmed.png")"
+"$MAGICK" "$TMP/trimmed.png" \
+  -background none -gravity center -extent "${SIDE}x${SIDE}" \
   -filter Lanczos -resize 1024x1024 -depth 8 "PNG32:$BUILD/icon.png"
 command cp -f "$BUILD/icon.png" "$BUILD/icon-1024.png"
 
@@ -71,7 +57,6 @@ command cp -f "$BUILD/icon.png" "$BUILD/icon-1024.png"
 echo "[INFO] building icon.icns"
 ICONSET="$TMP/icon.iconset"
 mkdir -p "$ICONSET"
-# Each size is downscaled from the 1024 master for crisp, anti-aliased results.
 gen() { # gen <size> <filename>
   "$MAGICK" "$BUILD/icon.png" -filter Lanczos -resize "${1}x${1}" \
     -depth 8 "PNG32:$ICONSET/$2"

@@ -58,7 +58,7 @@ test('validateDestRoot rejects a relative path', () => {
 });
 
 test('validateDestRoot rejects a path that does not exist', () => {
-  const missing = path.join(os.tmpdir(), 'ia-desktop-does-not-exist-xyz');
+  const missing = path.join(os.tmpdir(), 'grimmia-does-not-exist-xyz');
   assert.throws(() => v.validateDestRoot(missing), /exist|directory/i);
 });
 

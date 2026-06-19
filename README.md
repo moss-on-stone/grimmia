@@ -1,8 +1,8 @@
-# IA Desktop
+# Grimmia
 
 A friendly desktop app for the [Internet Archive](https://archive.org) — **search, browse, download, and upload** items without ever touching the command line. It does the same core jobs as the `ia` CLI, in a normal point-and-click app that runs on **macOS and Windows**.
 
-<p align="center"><img src="build/icon.png" width="120" alt="IA Desktop icon"></p>
+<p align="center"><img src="build/icon.png" width="120" alt="Grimmia icon"></p>
 
 ## What it does
 
@@ -46,17 +46,17 @@ OS shows a one-time "unknown developer" warning. The app is safe; you approve it
 once.
 
 ### macOS
-1. Download `IA Desktop-<version>-macOS-arm64.dmg` (Apple Silicon) or
+1. Download `Grimmia-<version>-macOS-arm64.dmg` (Apple Silicon) or
    `…-macOS-x64.dmg` (Intel).
-2. Open the `.dmg` and drag **IA Desktop** into **Applications**.
+2. Open the `.dmg` and drag **Grimmia** into **Applications**.
 3. First launch — macOS shows one of two warnings (both mean "unsigned"; you
    only do this once):
-   - **If it says *"IA Desktop.app" is damaged and can't be opened… Move it to
+   - **If it says *"Grimmia.app" is damaged and can't be opened… Move it to
      the Bin*** — common when downloaded via a browser / on **Sequoia (15)+**.
      The app is **not** damaged and there's no "Open Anyway" button. Click
      **Cancel**, then run this in **Terminal** and re-open the app:
      ```bash
-     xattr -dr com.apple.quarantine "/Applications/IA Desktop.app"
+     xattr -dr com.apple.quarantine "/Applications/Grimmia.app"
      ```
    - **If it says *Apple could not verify…* / *unidentified developer*** —
      **Sequoia (15)+:** open it, click **Done**, then **System Settings →
@@ -66,10 +66,10 @@ once.
    Full step-by-step with both dialogs: [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ### Windows
-1. Download `IA Desktop Setup <version>.exe`.
+1. Download `Grimmia Setup <version>.exe`.
 2. If SmartScreen warns, click **More info → Run anyway**, then follow the
    installer (you can choose the install folder).
-3. Launch **IA Desktop** from the Start menu or desktop shortcut.
+3. Launch **Grimmia** from the Start menu or desktop shortcut.
 
 > For wide distribution, add an Apple Developer ID / Windows code-signing
 > certificate — see **Building** below.

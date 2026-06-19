@@ -5,7 +5,7 @@
  * (insecure) plaintext fallback when safeStorage is unavailable.
  *
  * store.js guards `require('electron')`, so outside Electron it uses
- * ~/.ia-desktop. We point HOME at a tmpdir per run so nothing touches the real
+ * ~/.grimmia. We point HOME at a tmpdir per run so nothing touches the real
  * user data, and require the module fresh after setting HOME.
  */
 
@@ -23,7 +23,7 @@ function freshStore() {
   store.__setDataDir(dir);
   return {
     store,
-    home: dir, // the data dir IS the dir here (no nested .ia-desktop)
+    home: dir, // the data dir IS the dir here (no nested .grimmia)
     cleanup: () => {
       store.__setDataDir(undefined);
       fs.rmSync(dir, { recursive: true, force: true });

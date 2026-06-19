@@ -123,39 +123,57 @@ test('buildSearchUrl encodes CJK queries as UTF-8 and round-trips', () => {
 
 /* --------------------------- login response parse ------------------------- */
 
-test('parseLoginResponse extracts s3 keys, cookies and screenname', () => {
-  const r = core.parseLoginResponse({
-    success: true,
-    values: {
-      s3: { access: 'AKEY', secret: 'SKEY' },
-      cookies: { 'logged-in-user': 'u@example.com', 'logged-in-sig': 'sig123' },
-      screenname: 'Archivist',
+test('parseLoginResponse extracts s3 keys, cookies, screenname and the login email', () => {
+  const r = core.parseLoginResponse(
+    {
+      success: true,
+      values: {
+        s3: { access: 'AKEY', secret: 'SKEY' },
+        cookies: { 'logged-in-user': 'archivist', 'logged-in-sig': 'sig123' },
+        screenname: 'Archivist',
+      },
     },
-  });
+    'me@example.com'
+  );
   assert.equal(r.access, 'AKEY');
   assert.equal(r.secret, 'SKEY');
-  assert.equal(r.cookies['logged-in-user'], 'u@example.com');
+  assert.equal(r.cookies['logged-in-user'], 'archivist');
   assert.equal(r.screenname, 'Archivist');
+  assert.equal(r.email, 'me@example.com', 'email is the login email, not the cookie');
 });
 
-test('parseLoginResponse captures the itemname (@slug) when present', () => {
-  // xauthn returns the URL-safe account slug separately from the display
-  // screenname. The slug — NOT the display name — is what /details/@<slug> needs
-  // (a CJK display name like 石上苔 would 400). Capture it.
+test('parseLoginResponse derives the profile slug (itemname) from the logged-in-user cookie', () => {
+  // xauthn has no dedicated slug field; the display screenname can be CJK and is
+  // NOT the slug. The logged-in-user cookie carries the slug-form id (g_y_library).
+  const r = core.parseLoginResponse(
+    {
+      success: true,
+      values: {
+        s3: { access: 'AKEY', secret: 'SKEY' },
+        cookies: { 'logged-in-user': 'g_y_library', 'logged-in-sig': 'sig' },
+        screenname: '石上苔', // display name (CJK) — would 400 as a profile URL
+      },
+    },
+    'kl@example.com'
+  );
+  assert.equal(r.screenname, '石上苔');
+  assert.equal(r.itemname, 'g_y_library', 'slug comes from the logged-in-user cookie');
+});
+
+test('parseLoginResponse prefers an explicit itemname field if one is ever present', () => {
   const r = core.parseLoginResponse({
     success: true,
     values: {
-      s3: { access: 'AKEY', secret: 'SKEY' },
-      cookies: { 'logged-in-user': 'u@example.com', 'logged-in-sig': 'sig' },
-      screenname: '石上苔', // display name (CJK)
-      itemname: '@stone-on-moss', // URL slug
+      s3: { access: 'A', secret: 'S' },
+      cookies: { 'logged-in-user': 'cookie_slug' },
+      screenname: 'X',
+      itemname: 'explicit_slug',
     },
   });
-  assert.equal(r.screenname, '石上苔');
-  assert.equal(r.itemname, '@stone-on-moss');
+  assert.equal(r.itemname, 'explicit_slug');
 });
 
-test('parseLoginResponse leaves itemname empty when xauthn omits it', () => {
+test('parseLoginResponse leaves itemname empty when there is no cookie or itemname', () => {
   const r = core.parseLoginResponse({
     success: true,
     values: { s3: { access: 'A', secret: 'S' }, cookies: {}, screenname: 'X' },

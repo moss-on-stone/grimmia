@@ -1,12 +1,12 @@
-IA Desktop — How to install on macOS
+Grimmia — How to install on macOS
 =====================================
 
-IA Desktop is free and open-source, but it is NOT signed with a paid Apple
+Grimmia is free and open-source, but it is NOT signed with a paid Apple
 Developer ID. That's normal for small independent apps. macOS will show a
 warning the FIRST time you open it. The app is safe; you only approve it once.
 
 1. INSTALL
-   - Drag the "IA Desktop" icon onto the "Applications" folder (in this window).
+   - Drag the "Grimmia" icon onto the "Applications" folder (in this window).
    - Eject this disk image when done.
 
 2. OPEN IT THE FIRST TIME
@@ -16,7 +16,7 @@ warning the FIRST time you open it. The app is safe; you only approve it once.
    You only do this once — after that, the app opens normally.
 
    ----------------------------------------------------------------------------
-   MESSAGE A:  ' "IA Desktop.app" is damaged and can't be opened.
+   MESSAGE A:  ' "Grimmia.app" is damaged and can't be opened.
                  You should move it to the Bin. '
 
    You'll usually get THIS one if you downloaded the app with a browser
@@ -29,24 +29,24 @@ warning the FIRST time you open it. The app is safe; you only approve it once.
      b. Open the Terminal app (press Cmd-Space, type Terminal, press Return).
      c. Paste this ONE line and press Return (it clears the download flag):
 
-          xattr -dr com.apple.quarantine "/Applications/IA Desktop.app"
+          xattr -dr com.apple.quarantine "/Applications/Grimmia.app"
 
         (It prints nothing on success — that's fine.)
-     d. Double-click IA Desktop. It opens without the warning.
+     d. Double-click Grimmia. It opens without the warning.
    ----------------------------------------------------------------------------
-   MESSAGE B:  'Apple could not verify "IA Desktop" is free of malware'
+   MESSAGE B:  'Apple could not verify "Grimmia" is free of malware'
                (or "...from an unidentified developer")
 
    This milder warning lets you through without the Terminal:
 
    On macOS Sequoia (15) or newer:
-     a. Open IA Desktop from Applications. You'll see the warning — click "Done".
+     a. Open Grimmia from Applications. You'll see the warning — click "Done".
      b. Open  System Settings > Privacy & Security.
      c. Scroll to the "Security" section and click "Open Anyway".
      d. Confirm with "Open Anyway" and enter your password / Touch ID.
 
    On macOS Sonoma (14) or older:
-     a. In Applications, right-click (Control-click) "IA Desktop" > "Open".
+     a. In Applications, right-click (Control-click) "Grimmia" > "Open".
      b. Click "Open" again in the dialog.
 
    If "Open Anyway" never appears, use the Terminal line from MESSAGE A — it

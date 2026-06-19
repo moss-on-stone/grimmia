@@ -394,6 +394,58 @@
     return out;
   }
 
+  /**
+   * The About-tab content as a structured, testable model. Blocks are headings
+   * or paragraphs; a paragraph is an array of segments that are either plain
+   * strings or {text, url} links. The renderer turns links into
+   * shell.openExternal clicks (the strict CSP forbids in-page navigation, and
+   * there are no raw <a href> links in the renderer).
+   */
+  function aboutContent() {
+    const link = (text, url) => ({ text, url });
+    return [
+      { type: 'heading', text: 'About' },
+      {
+        type: 'para',
+        segments: [
+          'Grimmia was created in the spring of 2026 using Claude Opus 4.8 to help fans of the Internet Archive engage with its collections. The wonderful Internet Archive ',
+          link('Command-Line Interface', 'https://archive.org/developers/internetarchive/cli.html'),
+          ' provides a powerful way to interact with the rich collections at the Internet Archive via search, download, and upload. This application was built to help users less comfortable with the command line benefit from just some of these capabilities.',
+        ],
+      },
+      {
+        type: 'para',
+        segments: [
+          'This application provides a range of search options, and allows users to identify one or more items to add to a queue for sequential download. The app downloads only one file at a time, and by default has a few seconds between each download to mitigate impact on the IA servers. It aims to follow all IA best practices for use of its API. The application also supports upload features.',
+        ],
+      },
+      {
+        type: 'para',
+        segments: [
+          'The application requires that you have a free account with the Internet Archive, which may be created through their ',
+          link('signup page', 'https://archive.org/signup'),
+          '.',
+        ],
+      },
+      { type: 'heading', text: 'Other Notes' },
+      {
+        type: 'para',
+        segments: [
+          'Grimmia is a cross-platform Electron application released into the public domain, and the code for it may be found ',
+          link('at its repository', 'https://github.com/moss-on-stone/grimmia'),
+          ' on GitHub. It has no third-party runtime dependencies: it relies only on Node’s built-in modules (such as https, fetch, and crypto) and the Electron runtime, with no external libraries bundled into the app. Its only build-time tools are Electron itself and electron-builder (used to package the installers). This keeps the install small and the code straightforward to audit.',
+        ],
+      },
+      {
+        type: 'para',
+        segments: [
+          'I do not believe I’ll have much time to work on this app, which may have bugs and shortcomings. I encourage anyone to fork the application and develop it as you see fit. I would be especially delighted if the Internet Archive was inspired to take this application as inspiration for a desktop application of their own.',
+        ],
+      },
+      { type: 'para', segments: ['— Moss on Stone, June 2026'] },
+    ];
+  }
+
   /** Escape text for safe insertion as HTML text content. */
   function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -428,6 +480,7 @@
     overloadAlertView,
     resumeOfferText,
     planResumeReissue,
+    aboutContent,
     UPLOAD_LANGUAGES,
   };
 });

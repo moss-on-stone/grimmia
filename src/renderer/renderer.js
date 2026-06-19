@@ -200,6 +200,40 @@ document.querySelectorAll('.tab').forEach((tab) => {
   });
 });
 
+/* --------------------------------- About --------------------------------- */
+// Open an external URL in the system browser (CSP forbids in-page navigation).
+function openExternalLink(url) {
+  window.ia.shell.openExternal(url).catch((e) => toast(e.message, 'err'));
+}
+
+/** Render the About tab from the pure uiUtil.aboutContent() model. Links become
+ *  buttons that open externally — no raw <a href> (matches the app's CSP). */
+function renderAbout() {
+  const body = $('#about-body');
+  if (!body) return;
+  body.innerHTML = '';
+  for (const block of uiUtil.aboutContent()) {
+    if (block.type === 'heading') {
+      body.appendChild(el('h3', { class: 'prefs-h', text: block.text }));
+      continue;
+    }
+    const p = el('p', {});
+    for (const seg of block.segments) {
+      if (typeof seg === 'string') {
+        p.appendChild(document.createTextNode(seg));
+      } else {
+        p.appendChild(el('button', { class: 'linklike', text: seg.text, title: seg.url, onclick: () => openExternalLink(seg.url) }));
+      }
+    }
+    body.appendChild(p);
+  }
+}
+renderAbout();
+
+// Help-page donate link + login signup link (external).
+if ($('#help-donate')) $('#help-donate').addEventListener('click', () => openExternalLink('https://archive.org/donate'));
+if ($('#login-signup')) $('#login-signup').addEventListener('click', () => openExternalLink('https://archive.org/signup'));
+
 /* ------------------------------- search ---------------------------------- */
 let currentPage = 1;
 let numFound = 0;

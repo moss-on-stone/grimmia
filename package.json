@@ -1,7 +1,7 @@
 {
-  "name": "ia-desktop",
-  "productName": "IA Desktop",
-  "version": "0.1.32",
+  "name": "grimmia",
+  "productName": "Grimmia",
+  "version": "0.1.33",
   "description": "A friendly desktop app for the Internet Archive — search, browse, download, and upload without the command line.",
   "main": "src/main/main.js",
   "author": "Moss on Stone <moss-on-stone@protonmail.com>",
@@ -28,8 +28,8 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "org.iadesktop.app",
-    "productName": "IA Desktop",
+    "appId": "org.grimmia.app",
+    "productName": "Grimmia",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -96,7 +96,7 @@
         }
       ],
       "icon": "build/icon.ico",
-      "publisherName": "IA Desktop",
+      "publisherName": "Grimmia",
       "signingHashAlgorithms": [
         "sha256"
       ],

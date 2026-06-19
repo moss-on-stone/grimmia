@@ -1,4 +1,4 @@
-# IA Desktop — Code Review & Recommendations
+# Grimmia — Code Review & Recommendations
 
 _Independent review of the codebase at version 0.1.3. Findings were produced by
 four separate review passes (security, correctness/bugs, architecture/quality,
@@ -94,7 +94,7 @@ allowlist. Do not maintain a custom blacklist.
 
 The `--screenshot=<path>` branch is in the shipped `createWindow()` and is **not**
 gated behind `isDev` (only DevTools is). In the packaged app, anyone who can pass
-argv can run `IA Desktop --screenshot=/arbitrary/path.png`, causing the app to
+argv can run `Grimmia --screenshot=/arbitrary/path.png`, causing the app to
 capture the window and `fs.writeFileSync` to a caller-chosen path, then silently
 `app.exit(0)`.
 

@@ -16,7 +16,7 @@
  * @param {{isMac:boolean, isDev:boolean, appName?:string}} opts
  * @returns {Array} an Electron Menu template (array of MenuItemConstructorOptions)
  */
-function buildMenuTemplate({ isMac = false, isDev = false, appName = 'IA Desktop' } = {}) {
+function buildMenuTemplate({ isMac = false, isDev = false, appName = 'Grimmia' } = {}) {
   return [
     ...(isMac
       ? [

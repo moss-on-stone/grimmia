@@ -567,3 +567,13 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono",
 .help-sub li { margin-bottom: 3px; }
 .help-body code { background: var(--bg-elev2); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; }
 .help-body em { color: var(--text); font-style: normal; font-weight: 600; }
+/* Inline link-styled buttons (real external links go through shell.openExternal,
+   so we render <button>s that LOOK like links rather than raw <a href>). */
+.linklike {
+  background: none; border: none; padding: 0; margin: 0;
+  color: var(--accent); font: inherit; cursor: pointer;
+  text-decoration: underline; display: inline; width: auto; vertical-align: baseline;
+}
+.linklike:hover { background: none; color: var(--accent-hover); }
+.about-body { max-width: 760px; line-height: 1.6; }
+.about-body p { margin: 0 0 14px; }

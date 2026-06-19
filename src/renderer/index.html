@@ -7,7 +7,7 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src https://archive.org https://*.archive.org data:; connect-src 'none';"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IA Desktop</title>
+    <title>Grimmia</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -34,6 +34,10 @@
             Uses your archive.org account. Credentials are exchanged for upload keys
             and stored encrypted on this device.
           </p>
+          <p class="login-hint">
+            Don't have one?
+            <button id="login-signup" class="linklike" type="button">Create a free account at archive.org</button>.
+          </p>
         </form>
       </div>
     </div>
@@ -50,6 +54,7 @@
             <button class="tab" data-tab="upload">Upload</button>
             <button class="tab" data-tab="prefs">Preferences</button>
             <button class="tab" data-tab="help">Help</button>
+            <button class="tab" data-tab="about">About</button>
           </nav>
         </div>
         <div class="topbar-right">
@@ -577,7 +582,7 @@
         <div class="panel-head"><h2>Help &amp; features</h2></div>
         <div class="help-body">
           <p class="muted">
-            IA Desktop is a friendly front-end for the Internet Archive — search,
+            Grimmia is a friendly front-end for the Internet Archive — search,
             browse, download, and upload without the command line. Here's a tour.
           </p>
 
@@ -682,7 +687,19 @@
             <li>Pick the CSV in the Upload tab to see a parsed preview (with any missing files flagged)
               before anything is uploaded. Items upload one at a time.</li>
           </ul>
+
+          <h3 class="prefs-h">Support the Internet Archive</h3>
+          <p class="muted">The Internet Archive's work preserving the world's knowledge is
+            incredibly important. Please consider
+            <button id="help-donate" class="linklike" type="button">supporting their efforts with a donation</button>.</p>
         </div>
+      </section>
+
+      <!-- ABOUT TAB — content rendered from uiUtil.aboutContent() so links open
+           externally via shell.openExternal (no raw <a href> under the CSP). -->
+      <section id="tab-about" class="tab-panel">
+        <div class="panel-head"><h2>About</h2></div>
+        <div id="about-body" class="about-body help-body"></div>
       </section>
     </div>
 

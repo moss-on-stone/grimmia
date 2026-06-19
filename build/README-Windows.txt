@@ -1,13 +1,13 @@
-IA Desktop — How to install on Windows
+Grimmia — How to install on Windows
 ======================================
 
-IA Desktop is free and open-source, but it is NOT signed with a paid code-
+Grimmia is free and open-source, but it is NOT signed with a paid code-
 signing certificate. That's normal for small independent apps. Windows
 SmartScreen will show a warning the FIRST time you run the installer. The app
 is safe; you only need to approve it once.
 
 1. RUN THE INSTALLER
-   - Double-click "IA Desktop Setup <version>.exe".
+   - Double-click "Grimmia Setup <version>.exe".
    - If you see "Windows protected your PC":
        a. Click "More info".
        b. Click "Run anyway".
@@ -15,7 +15,7 @@ is safe; you only need to approve it once.
      Start-menu and desktop shortcuts.
 
 2. OPEN IT
-   - Launch "IA Desktop" from the Start menu or the desktop shortcut.
+   - Launch "Grimmia" from the Start menu or the desktop shortcut.
    - No further warnings after the first run.
 
 WHY THIS WARNING?

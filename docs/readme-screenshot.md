@@ -1,6 +1,6 @@
 # readme-screenshot
 
-Self-screenshot the IA Desktop window — no human needed to send screenshots.
+Self-screenshot the Grimmia window — no human needed to send screenshots.
 
 ## What it does
 

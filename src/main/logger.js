@@ -4,7 +4,7 @@
  * logger.js
  *
  * Tiny no-dependency structured logger. Writes one-line, ISO-timestamped,
- * leveled entries to `<userData>/logs/ia-desktop.log` AND mirrors them to the
+ * leveled entries to `<userData>/logs/grimmia.log` AND mirrors them to the
  * console. Rotates the file when it exceeds a size cap (keeping one `.1`
  * backup), so the log can't grow unbounded.
  *
@@ -63,11 +63,11 @@ function setEnabled(on) {
 function logDir() {
   if (logDirOverride) return logDirOverride;
   if (app && app.getPath) return path.join(app.getPath('userData'), 'logs');
-  return path.join(require('node:os').homedir(), '.ia-desktop', 'logs');
+  return path.join(require('node:os').homedir(), '.grimmia', 'logs');
 }
 
 function logFilePath() {
-  return path.join(logDir(), 'ia-desktop.log');
+  return path.join(logDir(), 'grimmia.log');
 }
 
 function ensureDir() {

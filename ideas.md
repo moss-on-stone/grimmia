@@ -1,4 +1,4 @@
-# IA Desktop — 20 Feature Enhancement Ideas
+# Grimmia — 20 Feature Enhancement Ideas
 
 _A backlog of potential features, grounded in what the `ia` CLI / archive.org
 APIs support and in where the app is today (v0.1.3: search, advanced search,

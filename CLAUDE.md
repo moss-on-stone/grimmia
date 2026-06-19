@@ -54,8 +54,9 @@ Installers are built in CI, not by hand. Two workflows in `.github/workflows/`:
   builds the artifacts but does NOT publish a Release). Builds are **unsigned by
   default** (the macOS `.app` is ad-hoc signed via `build/adhoc-sign.js`); they
   become signed + notarized if the CI secrets `APPLE_API_KEY`/`APPLE_API_KEY_ID`/
-  `APPLE_API_ISSUER` and `CSC_LINK`/`CSC_KEY_PASSWORD` are set (see README "Code
-  signing & notarization"). The bundled "Read Me First" covers the unsigned
+  `APPLE_API_ISSUER` and `CSC_LINK`/`CSC_KEY_PASSWORD` are set (the macOS
+  notarize hook is `build/notarize.js`; Windows signing uses electron-builder's
+  standard `CSC_*` env vars). The bundled "Read Me First" covers the unsigned
   OS warnings.
 - **`ci.yml`** — runs the test suite + coverage on every push/PR to `main` across
   macOS/Windows/Linux × Node 18/20, plus a headless renderer self-test

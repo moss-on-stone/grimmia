@@ -1,6 +1,6 @@
 # Grimmia
 
-A friendly desktop app for the [Internet Archive](https://archive.org) — **search, browse, download, and upload** items without ever touching the command line. It does the same core jobs as the `ia` CLI, in a normal point-and-click app that runs on **macOS and Windows**.
+A friendly desktop app for the [Internet Archive](https://archive.org) — **search, browse, download, and upload** items without ever touching the command line. It does the same core jobs as the `ia` CLI, in a normal point-and-click app that runs on **macOS and Windows** (with an **untested Linux** build also available).
 
 <p align="center"><img src="build/icon.png" width="120" alt="Grimmia icon"></p>
 
@@ -30,9 +30,6 @@ A friendly desktop app for the [Internet Archive](https://archive.org) — **sea
 - 🔐 Signs in with your archive.org **email + password**; your upload keys are
   stored **encrypted** on your device (macOS Keychain / Windows DPAPI via
   Electron `safeStorage`)
-
-No Python, no terminal, no extra runtime — it talks to archive.org's web APIs
-directly, so the installer is small (~90 MB).
 
 ## Install
 
@@ -104,43 +101,6 @@ npm run dist:win       # build Windows .exe  (run on / for Windows)
 
 Cross-building the Windows installer is most reliable **on Windows** (or in CI).
 macOS `.dmg` builds run on macOS.
-
-### Code signing & notarization (for distribution)
-
-The build is configured for a signed + notarized macOS app and a signed Windows
-installer; the config is **inert without credentials**, so a plain
-`npm run dist:mac` still produces an unsigned DMG locally (with the Gatekeeper
-prompt above). To produce a distributable build, provide the secrets below.
-
-**macOS** (hardened runtime + notarization are pre-wired —
-`build/entitlements.mac.plist`, `afterSign: build/notarize.js`):
-1. Install your **Developer ID Application** certificate in the build keychain
-   (electron-builder signs automatically when it finds one).
-2. Install the notarizer once: `npm i -D @electron/notarize`.
-3. Set App Store Connect API key env vars before `npm run dist:mac`:
-   ```bash
-   export APPLE_API_KEY=/abs/path/AuthKey_XXXX.p8   # the .p8 key file
-   export APPLE_API_KEY_ID=XXXXXXXXXX               # key ID
-   export APPLE_API_ISSUER=xxxxxxxx-xxxx-xxxx-...   # issuer ID
-   ```
-   With these set, the `afterSign` hook submits the app to Apple and staples the
-   ticket; without them it logs "skipping notarization" and the build proceeds
-   unsigned.
-
-**Windows** — provide a code-signing certificate via electron-builder's standard
-env vars before `npm run dist:win` (SHA-256 is already configured):
-```bash
-export CSC_LINK=/abs/path/cert.pfx     # or a base64 cert
-export CSC_KEY_PASSWORD=...             # cert password
-```
-
-> **Why this matters:** unsigned macOS apps are Gatekeeper-blocked ("damaged")
-> and Windows builds trip SmartScreen. Note too that `safeStorage` (used for
-> saved credentials) is keyed to a stable signing identity — without signing,
-> stored logins can be invalidated between builds.
-
-**CI secrets** (for the release job): `APPLE_API_KEY` (base64 of the .p8),
-`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `CSC_LINK`, `CSC_KEY_PASSWORD`.
 
 ## How it works
 

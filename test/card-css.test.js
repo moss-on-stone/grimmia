@@ -394,3 +394,11 @@ test('L2: inline <code> uses a monospace font with a Windows fallback (Consolas)
 test('L3: the transfer drag handle does not use the Braille tofu glyph ⠿ on Windows', () => {
   assert.ok(!css.includes('⠿'), 'the Braille drag-handle glyph ⠿ risks tofu on Windows — use a safer glyph');
 });
+
+test('a FAILED upload bar is red, not the upload teal (specificity must beat .job-upload .progress > span)', () => {
+  assert.match(
+    css,
+    /\.job-upload\s+\.progress\.error\s*>\s*span\s*\{[^}]*background\s*:\s*var\(--danger\)/,
+    'expected .job-upload .progress.error > span { background: var(--danger) }'
+  );
+});

@@ -47,15 +47,24 @@
   }
 
   /**
-   * Normalize dropped File-like objects into {path, name, size}. Entries without
-   * a filesystem path (e.g. a dragged URL) are skipped; the name falls back to
-   * the path's basename.
+   * Normalize dropped File-like objects into {path, name, size}. Electron >= 32
+   * removed File.path, so the renderer passes `getPath` (the preload's
+   * webUtils.getPathForFile); without one, a plain `.path` is used. Entries
+   * without a filesystem path (e.g. a dragged URL) are skipped; the name falls
+   * back to the path's basename.
    */
-  function extractDroppedFiles(files) {
+  function extractDroppedFiles(files, getPath) {
     const out = [];
     for (const f of files || []) {
-      if (!f || !f.path) continue;
-      out.push({ path: f.path, name: f.name || basename(f.path), size: Number(f.size) || 0 });
+      if (!f) continue;
+      let p;
+      try {
+        p = getPath ? getPath(f) : f.path;
+      } catch {
+        p = '';
+      }
+      if (!p) continue;
+      out.push({ path: p, name: f.name || basename(p), size: Number(f.size) || 0 });
     }
     return out;
   }
@@ -124,7 +133,40 @@
     return { ...base, creator: '', date: '', mediatype: 'texts', language: '', description: '', subjects: '' };
   }
 
+  /**
+   * Snapshot of an upload's form + files taken at submit time, so a failed or
+   * cancelled upload can be reopened in the Upload pane exactly as it was sent.
+   * A copy: later edits to the live form or file list never leak into it.
+   */
+  function uploadRetrySnapshot(form, files) {
+    return {
+      form: { ...(form || {}) },
+      files: (files || []).map((f) => ({ path: f.path, name: f.name, size: f.size })),
+    };
+  }
+
+  /**
+   * The note shown under the Identifier field after an availability check.
+   * `status` is 'available' | 'taken' | 'unknown'; `owned` says whether a taken
+   * identifier belongs to the logged-in account (re-uploading then ADDS files to
+   * that item rather than failing). Returns null when there's nothing to say.
+   */
+  function identifierCheckNotice(check) {
+    if (!check) return null;
+    const id = check.identifier;
+    if (check.status === 'available') return { level: 'ok', text: `✓ “${id}” is available.` };
+    if (check.status === 'taken' && check.owned) {
+      return { level: 'warn', text: `“${id}” is already your item — uploading will add these files to it.` };
+    }
+    if (check.status === 'taken') {
+      return { level: 'err', text: `“${id}” is already taken on archive.org — choose another identifier.` };
+    }
+    return null;
+  }
+
   return {
+    uploadRetrySnapshot,
+    identifierCheckNotice,
     addTemplate,
     removeTemplate,
     applyTemplate,

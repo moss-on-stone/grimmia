@@ -222,7 +222,8 @@ function createWindow() {
   // own DOM against a fake backend and prints SELFTEST_RESULT; we read it, log
   // it, and exit 0/1 so the harness is CI/script-runnable.
   if (selfTest) {
-    mainWindow.webContents.on('console-message', (_e, _level, message) => {
+    // Electron >= 35: the details live on the event (positional args deprecated).
+    mainWindow.webContents.on('console-message', ({ message }) => {
       // eslint-disable-next-line no-console
       if (isDev) console.log(`[renderer] ${message}`);
       const m = /^SELFTEST_RESULT (.+)$/.exec(message);
@@ -354,6 +355,12 @@ ipcMain.handle('search:parseInput', async (_e, { input, scope }) => parseSearchI
 ipcMain.handle('item:metadata', async (_e, { identifier }) => {
   validateIdentifier(identifier); // M6: re-validate at the boundary like every other handler
   return ia.getMetadata(identifier);
+});
+
+// Upload pane: is this identifier free? ('available' | 'taken' | 'unknown').
+ipcMain.handle('upload:checkIdentifier', async (_e, { identifier }) => {
+  validateIdentifier(identifier);
+  return ia.checkIdentifier(identifier);
 });
 
 // #16: read-only derive/catalog task status for an item.

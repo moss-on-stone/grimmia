@@ -61,6 +61,26 @@ test('encodeMetaValue URI-wraps non-ASCII (UTF-8)', () => {
   assert.equal(core.encodeMetaValue('snowman ☃'), 'uri(snowman%20%E2%98%83)');
 });
 
+test('encodeMetaValue URI-wraps control characters (newlines, tabs)', () => {
+  // Node rejects raw control chars in header values (ERR_INVALID_CHAR), so a
+  // multi-line description must travel uri()-wrapped like non-ASCII does.
+  assert.equal(core.encodeMetaValue('line one\nline two'), 'uri(line%20one%0Aline%20two)');
+  assert.equal(core.encodeMetaValue('a\r\nb'), 'uri(a%0D%0Ab)');
+  assert.equal(core.encodeMetaValue('tab\there'), 'uri(tab%09here)');
+  assert.equal(core.encodeMetaValue('del\x7F'), 'uri(del%7F)');
+});
+
+test('buildMetaHeaders output passes Node header validation for multi-line values', () => {
+  const { validateHeaderValue } = require('node:http');
+  const h = core.buildMetaHeaders({
+    description: 'Woodhead is listed as editor\nPreface is dated 1 May, 1925',
+    subject: ['x\ny', 'plain'],
+  });
+  for (const [name, value] of Object.entries(h)) {
+    assert.doesNotThrow(() => validateHeaderValue(name, value), name);
+  }
+});
+
 test('encodeMetaValue coerces numbers to strings', () => {
   assert.equal(core.encodeMetaValue(2024), '2024');
 });
@@ -208,4 +228,18 @@ test('downloadUrl builds the canonical /download path', () => {
 test('safeLocalName strips path separators to prevent traversal', () => {
   assert.equal(core.safeLocalName('../../etc/passwd'), 'passwd');
   assert.equal(core.safeLocalName('sub/dir/file.txt'), 'file.txt');
+});
+
+/* ------------------------- identifier availability ------------------------ */
+
+test('parseIdentifierCheck maps check_identifier.php codes', () => {
+  assert.equal(core.parseIdentifierCheck({ type: 'success', code: 'available' }), 'available');
+  assert.equal(core.parseIdentifierCheck({ type: 'success', code: 'not_available' }), 'taken');
+});
+
+test('parseIdentifierCheck returns unknown for anything unexpected', () => {
+  assert.equal(core.parseIdentifierCheck({ type: 'error', code: 'available' }), 'unknown');
+  assert.equal(core.parseIdentifierCheck({ type: 'success', code: 'weird' }), 'unknown');
+  assert.equal(core.parseIdentifierCheck(null), 'unknown');
+  assert.equal(core.parseIdentifierCheck('nope'), 'unknown');
 });

@@ -306,3 +306,34 @@ test('a POST (login) is NOT auto-retried on a 503 (non-idempotent)', async () =>
     f.restore();
   }
 });
+
+/* ---------------------------- checkIdentifier ----------------------------- */
+
+test('checkIdentifier GETs check_identifier.php with the UA and parses the code', async () => {
+  const f = installFakeFetch([
+    {
+      method: 'GET',
+      url: '/services/check_identifier.php',
+      response: { json: { identifier: 'taken-one', type: 'success', code: 'not_available' } },
+    },
+  ]);
+  try {
+    assert.equal(await ia.checkIdentifier('taken-one'), 'taken');
+    const u = new URL(f.calls[0].url);
+    assert.equal(u.hostname, 'archive.org');
+    assert.equal(u.searchParams.get('identifier'), 'taken-one');
+    assert.equal(u.searchParams.get('output'), 'json');
+    assert.match(f.calls[0].opts.headers['User-Agent'], /^Grimmia\//);
+  } finally {
+    f.restore();
+  }
+});
+
+test('checkIdentifier returns unknown on a non-ok response', async () => {
+  const f = installFakeFetch([{ method: 'GET', url: '/services/check_identifier.php', response: { status: 404, text: 'nope' } }]);
+  try {
+    assert.equal(await ia.checkIdentifier('whatever'), 'unknown');
+  } finally {
+    f.restore();
+  }
+});

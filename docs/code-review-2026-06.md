@@ -167,6 +167,8 @@ so `npm install` will **not** silently jump to 32 — this is a *latent upgrade
 hazard*, not an imminent break, and there's no test covering the real drop path.
 **Fix:** when upgrading past Electron 31, expose `webUtils.getPathForFile` via the
 preload; for now, add a comment/pin so the dependency is visible.
+**Resolved (Electron 44 upgrade):** the preload exposes `ia.upload.pathForFile`
+(`webUtils.getPathForFile`) and `extractDroppedFiles(files, getPath)` uses it.
 
 ### M5. Retry backoff has no jitter
 `src/main/download-queue.js:12-17`

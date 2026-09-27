@@ -10,6 +10,7 @@
  *   - login          POST https://archive.org/services/xauthn/?op=login
  *   - search         GET  https://archive.org/advancedsearch.php
  *   - getMetadata    GET  https://archive.org/metadata/{identifier}
+ *   - checkIdentifier GET https://archive.org/services/check_identifier.php
  *   - downloadFile   GET  https://archive.org/download/{identifier}/{file}
  *   - uploadFile     PUT  https://s3.us.archive.org/{identifier}/{file}
  *   - modifyMetadata POST https://archive.org/metadata/{identifier}
@@ -179,6 +180,19 @@ async function getMetadata(identifier) {
     throw new IAError(`Item "${identifier}" was not found.`, { status: 404 });
   }
   return json;
+}
+
+/**
+ * Is an identifier free to upload to? Asks archive.org's own
+ * services/check_identifier.php (the check the web uploader uses). An idempotent
+ * GET through request(), so it carries the UA and is retried on 429/503/500.
+ * Resolves 'available' | 'taken' | 'unknown' — never throws for a bad reply.
+ */
+async function checkIdentifier(identifier) {
+  if (!identifier) throw new IAError('No identifier provided.');
+  const url = `https://${HOST}/services/check_identifier.php?output=json&identifier=${encodeURIComponent(identifier)}`;
+  const { ok, json } = await request('GET', url);
+  return ok ? core.parseIdentifierCheck(json) : 'unknown';
 }
 
 /* --------------------------------------------------------------------------
@@ -509,6 +523,7 @@ module.exports = {
   login,
   search,
   getMetadata,
+  checkIdentifier,
   getTasks,
   scrapeCollectionPage,
   scrapeAll,

@@ -8,7 +8,7 @@
  * has no direct access to Node, the network, or credentials.
  */
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 /** Subscribe to a main->renderer event channel; returns an unsubscribe fn. */
 function on(channel, handler) {
@@ -46,6 +46,9 @@ contextBridge.exposeInMainWorld('ia', {
     chooseFiles: () => ipcRenderer.invoke('dialog:chooseFiles'),
     start: (args) => ipcRenderer.invoke('upload:start', args),
     cancel: (jobId) => ipcRenderer.invoke('upload:cancel', { jobId }),
+    checkIdentifier: (identifier) => ipcRenderer.invoke('upload:checkIdentifier', { identifier }),
+    // Electron >= 32 removed File.path; resolve a dropped File's path here.
+    pathForFile: (file) => webUtils.getPathForFile(file),
     onProgress: (handler) => on('upload:progress', handler),
   },
   bulk: {

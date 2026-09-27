@@ -179,3 +179,94 @@ test('nextUploadForm wipes everything when preserve=false', () => {
   // mediatype resets to the default 'texts' rather than blank (it's a select).
   assert.equal(out.mediatype, 'texts');
 });
+
+/* ------------------------ retry a failed upload -------------------------- */
+
+const { uploadRetrySnapshot, identifierCheckNotice } = require('../src/shared/upload-templates');
+
+test('uploadRetrySnapshot keeps every form field and the file list', () => {
+  const form = {
+    identifier: 'china-year-book-1923',
+    title: 'The China Year Book 1923',
+    creator: 'Woodhead',
+    date: '1923',
+    mediatype: 'texts',
+    language: 'eng',
+    description: 'line one\nline two',
+    subjects: 'China, yearbook',
+    rtl: false,
+    oneUp: true,
+  };
+  const files = [{ path: '/x/The China Year Book 1923.pdf', name: 'The China Year Book 1923.pdf', size: 123 }];
+  const snap = uploadRetrySnapshot(form, files);
+  assert.deepEqual(snap.form, form);
+  assert.deepEqual(snap.files, files);
+});
+
+test('uploadRetrySnapshot is a copy — later form/file edits do not leak into it', () => {
+  const form = { identifier: 'a', title: 'A', subjects: 'x' };
+  const files = [{ path: '/p/a.pdf', name: 'a.pdf', size: 1 }];
+  const snap = uploadRetrySnapshot(form, files);
+  form.title = 'changed';
+  files[0].name = 'changed.pdf';
+  files.push({ path: '/p/b.pdf', name: 'b.pdf', size: 2 });
+  assert.equal(snap.form.title, 'A');
+  assert.equal(snap.files.length, 1);
+  assert.equal(snap.files[0].name, 'a.pdf');
+});
+
+test('uploadRetrySnapshot keeps only path/name/size of each file', () => {
+  const snap = uploadRetrySnapshot({}, [{ path: '/p/a.pdf', name: 'a.pdf', size: 5, extra: 'drop me' }]);
+  assert.deepEqual(snap.files, [{ path: '/p/a.pdf', name: 'a.pdf', size: 5 }]);
+});
+
+/* --------------------- identifier availability notice -------------------- */
+
+test('identifierCheckNotice: available → ok', () => {
+  const n = identifierCheckNotice({ status: 'available', identifier: 'new-item' });
+  assert.equal(n.level, 'ok');
+  assert.match(n.text, /available/i);
+});
+
+test('identifierCheckNotice: taken by someone else → err, asks for another', () => {
+  const n = identifierCheckNotice({ status: 'taken', identifier: 'x', owned: false });
+  assert.equal(n.level, 'err');
+  assert.match(n.text, /already taken/i);
+});
+
+test('identifierCheckNotice: taken but owned by this account → warn, files get added', () => {
+  const n = identifierCheckNotice({ status: 'taken', identifier: 'x', owned: true });
+  assert.equal(n.level, 'warn');
+  assert.match(n.text, /your item/i);
+  assert.match(n.text, /add/i);
+});
+
+test('identifierCheckNotice: unknown / failed check → no notice', () => {
+  assert.equal(identifierCheckNotice({ status: 'unknown', identifier: 'x' }), null);
+  assert.equal(identifierCheckNotice(null), null);
+});
+
+/* ---------- Electron 32+: File.path is gone — resolve via a getter -------- */
+
+test('extractDroppedFiles resolves paths through getPath (webUtils.getPathForFile)', () => {
+  // Electron >= 32 File objects have NO .path; the preload resolves it.
+  const f1 = { name: 'x.pdf', size: 10 };
+  const f2 = { name: 'y.pdf', size: 20 };
+  const paths = new Map([[f1, '/a/x.pdf'], [f2, '/a/y.pdf']]);
+  assert.deepEqual(extractDroppedFiles([f1, f2], (f) => paths.get(f)), [
+    { path: '/a/x.pdf', name: 'x.pdf', size: 10 },
+    { path: '/a/y.pdf', name: 'y.pdf', size: 20 },
+  ]);
+});
+
+test('extractDroppedFiles skips files the getter cannot resolve (empty string)', () => {
+  const out = extractDroppedFiles([{ name: 'url-drag', size: 0 }], () => '');
+  assert.deepEqual(out, []);
+});
+
+test('extractDroppedFiles survives a throwing getter', () => {
+  const out = extractDroppedFiles([{ name: 'x', size: 1 }], () => {
+    throw new Error('not a File');
+  });
+  assert.deepEqual(out, []);
+});

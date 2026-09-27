@@ -60,12 +60,27 @@ const DEFAULT_SEARCH_FIELDS = [
 
 /* -------------------------- metadata value encoding ----------------------- */
 
-/** Encode a metadata value per IAS3 rules (UTF-8 uri()-wrapped when non-ASCII). */
+/**
+ * Encode a metadata value per IAS3 rules: printable ASCII travels raw; anything
+ * else (non-ASCII, or control chars like the newlines in a multi-line
+ * description, which Node rejects in header values) is UTF-8 uri()-wrapped.
+ */
 function encodeMetaValue(value) {
   const s = String(value);
-  // eslint-disable-next-line no-control-regex
-  if (/^[\x00-\x7F]*$/.test(s)) return s;
+  if (/^[\x20-\x7E]*$/.test(s)) return s;
   return `uri(${encodeURIComponent(s)})`;
+}
+
+/**
+ * Map a services/check_identifier.php JSON reply to 'available' | 'taken' |
+ * 'unknown'. Anything unexpected is 'unknown' so the UI stays quiet rather than
+ * wrongly blocking or approving an identifier.
+ */
+function parseIdentifierCheck(json) {
+  if (!json || typeof json !== 'object' || json.type !== 'success') return 'unknown';
+  if (json.code === 'available') return 'available';
+  if (json.code === 'not_available') return 'taken';
+  return 'unknown';
 }
 
 /** Convert a metadata field name to its header-safe form (underscore -> --). */
@@ -191,6 +206,7 @@ module.exports = {
   HOST,
   DEFAULT_SEARCH_FIELDS,
   encodeMetaValue,
+  parseIdentifierCheck,
   metaHeaderName,
   buildMetaHeaders,
   buildSearchUrl,

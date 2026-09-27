@@ -65,14 +65,26 @@
       metadata: async (id) => ({
         // uploader matches the logged-in screenname so the owner-only actions
         // (Edit metadata / Tasks) are exercised (#12).
-        metadata: { title: id, creator: 'Aaron', mediatype: 'texts', description: 'A test item.', collection: 'shared', uploader: 'SelfTest' },
+        metadata: { title: id, creator: 'Aaron', mediatype: 'texts', description: 'A test item.', collection: 'shared', uploader: String(id).startsWith('taken-') ? 'someone-else' : 'SelfTest' },
         files: [{ name: 'a.pdf', format: 'Text PDF', size: 100 }, { name: 'b.txt', format: 'DjVuTXT', size: 5 }],
       }),
       tasks: async () => [],
     },
     prefs: { formatPresets: async () => [{ key: 'pdf', label: 'PDF only' }, { key: 'all', label: 'All files' }] },
     download: { start: async () => ({ ok: true }), collection: async () => ({ ok: true }), cancel: async () => ({}), onProgress: () => () => {} },
-    upload: { chooseFiles: async () => [{ path: '/tmp/My Great Book.pdf', name: 'My Great Book.pdf', size: 1234 }], start: async () => ({ ok: true }), cancel: async () => ({}), onProgress: () => () => {} },
+    upload: {
+      chooseFiles: async () => [{ path: '/tmp/My Great Book.pdf', name: 'My Great Book.pdf', size: 1234 }],
+      // Records the job so the harness can fail it; never resolves an upload.
+      start: async (args) => { fakeIa.upload._lastStart = args; return { ok: true }; },
+      _lastStart: null,
+      cancel: async () => ({}),
+      // Capture the renderer's handler so the harness can push progress events.
+      onProgress: (h) => { fakeIa.upload._onProgress = h; return () => {}; },
+      _onProgress: null,
+      // 'alpha' exists and (per item.metadata) is owned by SelfTest; 'taken-*' is someone else's.
+      checkIdentifier: async (id) => (id === 'alpha' || id.startsWith('taken-') ? 'taken' : 'available'),
+      pathForFile: (f) => f.path || '',
+    },
     bulk: { choose: async () => null, upload: async () => ({ ok: true }) },
     transfer: {
       // Capture the renderer's handler so the harness can push a fake snapshot.
@@ -263,6 +275,48 @@
       check('upload language dropdown lists 15 languages + the none option', $('#up-language').options.length === 16);
       check('upload has a right-to-left (page-progression) checkbox', !!$('#up-rtl'));
       check('upload has a single-page (bookreader-defaults) checkbox', !!$('#up-1up'));
+
+      // ----- identifier availability check on leaving the field -----
+      const idNote = () => $('#up-identifier-note');
+      const blurId = async (v) => {
+        $('#up-identifier').value = v;
+        $('#up-identifier').dispatchEvent(new Event('blur'));
+        await waitFor(() => !idNote().hidden && idNote().textContent.includes(v), 2000);
+      };
+      await blurId('free-one');
+      check('id check: a free identifier shows an "available" note', idNote().classList.contains('ok'));
+      await blurId('taken-by-other');
+      check('id check: someone else\'s identifier shows a "taken" error', idNote().classList.contains('err'));
+      await blurId('alpha');
+      check('id check: the user\'s own item shows a "your item" warning', idNote().classList.contains('warn'));
+      $('#up-identifier').dispatchEvent(new Event('input'));
+      check('id check: editing the identifier clears the note', idNote().hidden);
+
+      // ----- failed upload → "Edit & retry" reopens it in the Upload pane -----
+      $('#up-clear').click();
+      $('#up-choose-files').click();
+      await waitFor(() => $('#up-identifier').value !== '', 2000);
+      $('#up-identifier').value = 'retry-me';
+      $('#up-description').value = 'line one\nline two';
+      $('#up-rtl').checked = true;
+      $('#upload-form').requestSubmit();
+      await waitFor(() => fakeIa.upload._lastStart, 2000);
+      const started = fakeIa.upload._lastStart;
+      check('retry: the form resets after submit', $('#up-identifier').value === '');
+      fakeIa.upload._onProgress({ jobId: started.jobId, phase: 'error', message: 'Upload timed out.' });
+      const jobCard = document.getElementById(started.jobId);
+      const btnTexts = [...jobCard.querySelectorAll('.job-actions button')].map((b) => b.textContent);
+      check('retry: a failed upload drops its Cancel button', !btnTexts.includes('Cancel'));
+      check('retry: a failed upload offers "Edit & retry"', btnTexts.includes('Edit & retry'));
+      jobCard.querySelector('.retry-btn').click();
+      await waitFor(() => $('#up-identifier').value === 'retry-me', 2000);
+      check('retry: the identifier is restored', $('#up-identifier').value === 'retry-me');
+      check('retry: the title is restored', $('#up-title').value === 'My Great Book');
+      check('retry: a multi-line description is restored intact', $('#up-description').value === 'line one\nline two');
+      check('retry: reader options are restored', $('#up-rtl').checked === true);
+      check('retry: the file list is restored', $('#up-file-list').children.length === 1 && !$('#up-submit').disabled);
+      check('retry: the Upload tab is shown', $('.tab[data-tab="upload"]').classList.contains('active'));
+      $('#up-clear').click();
 
       // ----- transfer queue: active pinned on top, queued cards draggable -----
       const dl = $('#downloads-list');

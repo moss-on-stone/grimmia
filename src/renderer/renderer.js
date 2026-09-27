@@ -1881,6 +1881,7 @@ function clearFinishedTransfers() {
     for (const card of [...list.querySelectorAll('.job')]) {
       const prog = card.querySelector('.progress');
       if (prog && (prog.classList.contains('done') || prog.classList.contains('error'))) {
+        uploadRetry.delete(card.id);
         card.remove();
       }
     }
@@ -1992,6 +1993,7 @@ function updateJob(p, kind) {
       jobMismatches.set(p.jobId, (jobMismatches.get(p.jobId) || 0) + 1);
     }
   } else if (p.phase === 'complete') {
+    uploadRetry.delete(p.jobId);
     bar.parentElement.classList.add('done');
     bar.style.width = '100%';
     const mismatches = jobMismatches.get(p.jobId) || 0;
@@ -2028,6 +2030,21 @@ function updateJob(p, kind) {
   } else if (p.phase === 'error') {
     bar.parentElement.classList.add('error');
     sub.textContent = `Error: ${p.message}`;
+    // Nothing left to cancel. A failed/cancelled single upload instead offers to
+    // reopen it in the Upload pane with the same files + metadata.
+    const cancelBtn = card.querySelector('.job-actions button');
+    if (cancelBtn) cancelBtn.remove();
+    const snap = kind === 'upload' ? uploadRetry.get(p.jobId) : null;
+    if (snap && !card.querySelector('.retry-btn')) {
+      card.querySelector('.job-actions').appendChild(
+        el('button', {
+          class: 'ghost retry-btn',
+          text: 'Edit & retry',
+          title: 'Reopen this upload in the Upload pane with the same files and metadata',
+          onclick: () => restoreUploadForRetry(snap),
+        })
+      );
+    }
     toast(p.message, 'err');
     trackJobEnd(kind);
   }
@@ -2255,6 +2272,70 @@ $('#pref-preserve-upload-meta').addEventListener('change', async (e) => {
 
 /* ------------------------------- upload ---------------------------------- */
 let uploadFiles = [];
+// jobId -> uploadRetrySnapshot taken at submit, for the job card's "Edit & retry".
+const uploadRetry = new Map();
+
+/**
+ * Reopen a failed/cancelled upload in the Upload pane with its original files
+ * and metadata, ready to adjust and submit again. Asks first if the form
+ * already holds something the user is setting up.
+ */
+async function restoreUploadForRetry(snap) {
+  const busy = uploadFiles.length > 0 || $('#up-identifier').value.trim() || $('#up-title').value.trim();
+  if (busy && !(await confirmDialog('Replace what is currently in the Upload form with this upload?', 'Replace'))) return;
+  const f = snap.form;
+  $('#up-identifier').value = f.identifier || '';
+  $('#up-title').value = f.title || '';
+  setUploadForm(f);
+  $('#up-rtl').checked = !!f.rtl;
+  $('#up-1up').checked = !!f.oneUp;
+  uploadFiles = snap.files.map((x) => ({ ...x }));
+  renderUploadFiles();
+  $('#upload-status').hidden = true;
+  activateTab('upload');
+  $('#up-identifier').focus();
+  checkUploadIdentifier();
+}
+
+/* ------------------ identifier availability (on leaving) ------------------ */
+let lastIdCheck = '';
+function setIdentifierNote(notice) {
+  const note = $('#up-identifier-note');
+  note.hidden = !notice;
+  note.className = `id-note small${notice ? ' ' + notice.level : ''}`;
+  note.textContent = notice ? notice.text : '';
+}
+
+/** Ask archive.org whether the identifier is free; quiet on any failure. */
+async function checkUploadIdentifier() {
+  const identifier = $('#up-identifier').value.trim();
+  if (!identifier || !validIdentifier(identifier)) {
+    lastIdCheck = '';
+    return setIdentifierNote(null);
+  }
+  if (identifier === lastIdCheck) return; // unchanged since the last check
+  lastIdCheck = identifier;
+  let status = 'unknown';
+  let owned = false;
+  try {
+    status = await window.ia.upload.checkIdentifier(identifier);
+    // A taken identifier may be the user's own item (e.g. a partly-finished
+    // upload) — then re-uploading adds files instead of failing.
+    if (status === 'taken' && account) {
+      const md = await window.ia.item.metadata(identifier).catch(() => null);
+      owned = !!(md && itemView.canEditItem(md.metadata, account));
+    }
+  } catch {
+    status = 'unknown';
+  }
+  if ($('#up-identifier').value.trim() !== identifier) return; // edited meanwhile
+  setIdentifierNote(uploadTemplates.identifierCheckNotice({ status, identifier, owned }));
+}
+$('#up-identifier').addEventListener('blur', checkUploadIdentifier);
+$('#up-identifier').addEventListener('input', () => {
+  lastIdCheck = '';
+  setIdentifierNote(null);
+});
 
 $('#up-choose-files').addEventListener('click', async () => {
   const picked = await window.ia.upload.chooseFiles();
@@ -2262,6 +2343,7 @@ $('#up-choose-files').addEventListener('click', async () => {
     uploadFiles = picked;
     autofillFromFirstFile({ overwrite: false }); // #1/#2: default title + id
     renderUploadFiles();
+    checkUploadIdentifier(); // the identifier may have just been auto-filled
   }
 });
 
@@ -2311,7 +2393,7 @@ const dropZone = $('#up-drop-zone');
 );
 dropZone.addEventListener('drop', (e) => {
   // Electron exposes the real filesystem path on dropped File objects.
-  const dropped = uploadTemplates.extractDroppedFiles([...(e.dataTransfer.files || [])]);
+  const dropped = uploadTemplates.extractDroppedFiles([...(e.dataTransfer.files || [])], window.ia.upload.pathForFile);
   if (!dropped.length) return toast('No files in that drop.', 'err');
   const hadNone = uploadFiles.length === 0;
   const existing = new Set(uploadFiles.map((f) => f.path));
@@ -2327,6 +2409,7 @@ dropZone.addEventListener('drop', (e) => {
     $('#up-identifier').value = uploadTemplates.deriveIdentifierFromFilename(src.name);
   }
   renderUploadFiles();
+  checkUploadIdentifier(); // the identifier may have just been auto-filled
 });
 
 /* ---------------------- upload metadata templates (#15) ------------------ */
@@ -2425,9 +2508,20 @@ $('#upload-form').addEventListener('submit', async (e) => {
   });
   const derive = true; // derive always runs (generates viewers/thumbnails)
   const files = uploadFiles;
+  const retrySnap = uploadTemplates.uploadRetrySnapshot(
+    {
+      identifier,
+      title: $('#up-title').value,
+      ...currentUploadForm(),
+      rtl: $('#up-rtl').checked,
+      oneUp: $('#up-1up').checked,
+    },
+    files
+  );
 
   // Add the job card to the Uploads section (no tab switch) and badge it.
   const jobId = nextJobId();
+  uploadRetry.set(jobId, retrySnap);
   const card = createJobCard(jobId, identifier, files.length, 'upload');
   addJobCard(card, 'upload');
   trackJobStart('upload');
@@ -2469,6 +2563,8 @@ function resetUploadForm({ preserve }) {
   $('#up-rtl').checked = false;
   $('#up-1up').checked = false;
   $('#up-submit').disabled = true;
+  lastIdCheck = '';
+  setIdentifierNote(null);
 }
 
 // "Clear All" wipes every field regardless of the preserve preference.
